@@ -70,7 +70,7 @@ main { padding: 20px 24px; max-width: 1500px; margin: 0 auto; }
 .bar > i.cpu { background: var(--accent); }
 .bar > i.mem { background: var(--purple); }
 .bar > i.disk { background: var(--yellow); }
-.card .net { display: flex; gap: 16px; margin-top: 12px; font-size: 12px; color: var(--muted); }
+.card .net { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; font-size: 12px; color: var(--muted); }
 .card .net b { color: var(--text); }
 
 /* detail */
