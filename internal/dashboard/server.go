@@ -66,6 +66,18 @@ func (s *Server) GateStatic(h http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.authorized(r, []byte(s.webToken)) {
+			// If the user authenticated via ?token= query param (e.g. clicking
+			// the access link), establish a session cookie so subsequent
+			// requests for app.js / style.css / ws are authenticated too.
+			if c, err := r.Cookie("probe_session"); err != nil || !s.validSession(c.Value) {
+				if t := r.URL.Query().Get("token"); t != "" && subtle.ConstantTimeCompare([]byte(t), []byte(s.webToken)) == 1 {
+					http.SetCookie(w, &http.Cookie{
+						Name: "probe_session", Value: s.newSession(), Path: "/",
+						HttpOnly: true, SameSite: http.SameSiteStrictMode,
+						MaxAge: 7 * 24 * 3600, Secure: r.TLS != nil,
+					})
+				}
+			}
 			h.ServeHTTP(w, r)
 			return
 		}
