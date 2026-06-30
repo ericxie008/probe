@@ -82,6 +82,9 @@ func (h *Hub) HandleAgent(ws *websocket.Conn) {
 		name: name,
 		ws:   ws,
 	}
+	// Send the auth result BEFORE registering / entering the read loop, so
+	// the agent unblocks its handshake and starts streaming state.
+	_ = writeMsg(ws, proto.Message{Type: proto.MsgAuthResult, AuthResult: &proto.AuthResult{OK: true}})
 	// Authenticated from here on: no more read deadline.
 	_ = ws.SetReadDeadline(time.Time{})
 
