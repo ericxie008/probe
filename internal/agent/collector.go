@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"os"
 	"runtime"
 	"sort"
 	"time"
@@ -87,6 +88,9 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 				break
 			}
 		}
+	}
+	if s.CPUTemp == 0 {
+		s.CPUTemp = readLinuxThermal()
 	}
 
 	if vm, err := mem.VirtualMemory(); err == nil {
@@ -193,4 +197,36 @@ func isIPv6(addr string) bool {
 		}
 	}
 	return false
+}
+
+// readLinuxThermal reads CPU temperature from /sys/class/thermal/thermal_zone*/temp.
+// This is the standard Linux sysfs path and works on ARM servers where
+// gopsutil's SensorsTemperatures() often returns nothing.
+func readLinuxThermal() float64 {
+	entries, err := os.ReadDir("/sys/class/thermal")
+	if err != nil {
+		return 0
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if len(name) < 12 || name[:12] != "thermal_zone" {
+			continue
+		}
+		data, err := os.ReadFile("/sys/class/thermal/" + name + "/temp")
+		if err != nil {
+			continue
+		}
+		var milli int
+		for _, c := range data {
+			if c >= '0' && c <= '9' {
+				milli = milli*10 + int(c-'0')
+			} else {
+				break
+			}
+		}
+		if milli > 0 {
+			return float64(milli) / 1000.0
+		}
+	}
+	return 0
 }

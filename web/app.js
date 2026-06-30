@@ -115,7 +115,6 @@ function card(s) {
       <span>↓ <b>${fmt.rate(s.net_speed_in)}</b></span>
       <span>↑ <b>${fmt.rate(s.net_speed_out)}</b></span>
       <span>运行 <b>${fmt.uptime(s.uptime)}</b></span>
-      <span>温度 <b>${s.cpu_temp>0?s.cpu_temp.toFixed(0)+"°C":"—"}</b></span>
       <span>总入 <b>${fmt.bytes(s.net_in)}</b></span>
       <span>总出 <b>${fmt.bytes(s.net_out)}</b></span>
     </div>
