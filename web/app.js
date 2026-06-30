@@ -80,6 +80,9 @@ function renderList() {
   for (const el of app.querySelectorAll(".card")) {
     el.onclick = () => { location.hash = "/" + el.dataset.id; };
   }
+  app.querySelectorAll(".edit-btn-sm").forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); renameAgent(btn.dataset.rename); };
+  });
 }
 
 function card(s) {
@@ -87,9 +90,13 @@ function card(s) {
   const memP = fmt.pct(s.memory_used, s.memory_total);
   const cpuP = fmt.pct(s.cpu_usage, 100);
   const diskP = fmt.pct(s.disk_used, s.disk_total);
+  const swapP = fmt.pct(s.swap_used, s.swap_total);
   return `<div class="card" data-id="${s.agent_id}">
     <div class="head">
-      <div><div class="name">${esc(s.name)}</div><div class="os">${esc(s.os||"")} · ${esc(s.arch||"")}</div></div>
+      <div>
+        <div class="name-row"><span class="name">${esc(s.name)}</span><button class="edit-btn-sm" data-rename="${s.agent_id}" title="修改名称">✎</button></div>
+        <div class="os">${esc(s.os||"")} · ${s.cpu_count||"?"} 核 · ${esc(s.arch||"")}</div>
+      </div>
       <span class="status ${online ? "online" : "offline"}">${online ? "在线" : "离线"}</span>
     </div>
     <div class="meters">
@@ -98,10 +105,17 @@ function card(s) {
       <div class="meter"><div class="label"><span>磁盘</span><b>${diskP}</b></div><div class="bar"><i class="disk" style="width:${diskP}"></i></div></div>
       <div class="meter"><div class="label"><span>负载</span><b>${(s.load1||0).toFixed(2)}</b></div><div class="bar"><i class="disk" style="width:${Math.min(100,(s.load1||0)/(s.cpu_count||1)*100)}%"></i></div></div>
     </div>
+    <div class="detail-grid">
+      <div>内存 <b>${fmt.bytes(s.memory_used)} / ${fmt.bytes(s.memory_total)}</b></div>
+      <div>磁盘 <b>${fmt.bytes(s.disk_used)} / ${fmt.bytes(s.disk_total)}</b></div>
+      <div>交换 <b>${fmt.bytes(s.swap_used)} / ${fmt.bytes(s.swap_total)}</b></div>
+      <div>连接 <b>${s.conn_count||0}</b></div>
+    </div>
     <div class="net">
       <span>↓ <b>${fmt.rate(s.net_speed_in)}</b></span>
       <span>↑ <b>${fmt.rate(s.net_speed_out)}</b></span>
       <span>运行 <b>${fmt.uptime(s.uptime)}</b></span>
+      <span>温度 <b>${s.cpu_temp>0?s.cpu_temp.toFixed(0)+"°C":"—"}</b></span>
     </div>
   </div>`;
 }
@@ -227,30 +241,37 @@ function push(ch, [label, vals]) {
 }
 
 // 改名:点击标题旁的铅笔,弹窗输入新名字
+// 绑定详情页的改名按钮
 function bindRename(id) {
   const btn = document.getElementById("renameBtn");
   if (!btn) return;
-  btn.onclick = async () => {
-    const cur = states[id] && states[id].name ? states[id].name : "";
-    const name = prompt("修改主机名称:", cur);
-    if (name === null) return; // 取消
-    const trimmed = name.trim();
-    if (!trimmed) { alert("名称不能为空"); return; }
-    try {
-      const r = await fetch(`/api/servers/${encodeURIComponent(id)}/rename`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmed }),
-      });
-      if (r.ok) {
-        if (states[id]) states[id].name = trimmed;
+  btn.onclick = (e) => { e.preventDefault(); renameAgent(id); };
+}
+// 通用改名逻辑(卡片和详情页共用),改完自动刷新当前视图
+async function renameAgent(id) {
+  const cur = states[id] && states[id].name ? states[id].name : "";
+  const name = prompt("修改主机名称:", cur);
+  if (name === null) return; // 取消
+  const trimmed = name.trim();
+  if (!trimmed) { alert("名称不能为空"); return; }
+  try {
+    const r = await fetch(`/api/servers/${encodeURIComponent(id)}/rename`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: trimmed }),
+    });
+    if (r.ok) {
+      if (states[id]) states[id].name = trimmed;
+      if (selected === id) {
         const h1 = document.getElementById("titleName");
         if (h1) h1.textContent = trimmed;
       } else {
-        alert("改名失败: " + r.status);
+        renderList(); // 卡片列表刷新名字
       }
-    } catch (e) { alert("网络错误"); }
-  };
+    } else {
+      alert("改名失败: " + r.status);
+    }
+  } catch (e) { alert("网络错误"); }
 }
 
 async function loadHistory(id) {
