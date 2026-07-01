@@ -18,7 +18,8 @@ const historyWindow = 2 * time.Hour
 type Store struct {
 	mu     sync.RWMutex
 	latest map[string]*proto.State // agentID -> most recent state
-	known  map[string]string       // agentID -> name
+	known   map[string]string       // agentID -> name
+	deleted map[string]struct{}       // admin-deleted agentIDs
 	db     *sql.DB
 }
 
@@ -33,8 +34,9 @@ func NewStore(path string) (*Store, error) {
 		return nil, err
 	}
 	return &Store{
-		latest: make(map[string]*proto.State),
-		known:  make(map[string]string),
+		latest:  make(map[string]*proto.State),
+		known:   make(map[string]string),
+		deleted: make(map[string]struct{}),
 		db:     db,
 	}, nil
 }
@@ -81,6 +83,13 @@ func (s *Store) RememberAgent(id, name string) {
 
 // UpdateState stores a fresh snapshot: updates the hot cache and inserts a row.
 func (s *Store) UpdateState(st *proto.State) {
+	// Ignore agents that were admin-deleted (prevents re-registration).
+	s.mu.RLock()
+	if _, gone := s.deleted[st.AgentID]; gone {
+		s.mu.RUnlock()
+		return
+	}
+	s.mu.RUnlock()
 	// An admin-set name takes precedence over what the agent reports.
 	if ov := s.overrideName(st.AgentID); ov != "" {
 		st.Name = ov
@@ -186,6 +195,7 @@ func (s *Store) Delete(id string) error {
 	s.mu.Lock()
 	delete(s.latest, id)
 	delete(s.known, id)
+	s.deleted[id] = struct{}{} // block re-registration
 	s.mu.Unlock()
 	if _, err := s.db.Exec(`DELETE FROM metrics WHERE agent_id=?`, id); err != nil {
 		return err
