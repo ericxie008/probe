@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -33,6 +34,12 @@ func NewStore(path string) (*Store, error) {
 	db.SetMaxOpenConns(1) // sqlite serializes writes anyway
 	if _, err := db.Exec(schema); err != nil {
 		return nil, err
+	}
+	// Auto-migrate: add columns that may not exist in older databases.
+	for _, col := range []struct{ tbl, col, typ string }{
+		{"servers", "override_name", "TEXT"},
+	} {
+		db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, col.tbl, col.col, col.typ))
 	}
 	// Load deleted set from SQLite (survives restarts)
 	deleted := make(map[string]struct{})
