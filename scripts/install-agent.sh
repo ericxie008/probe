@@ -66,6 +66,7 @@ ensure_go() {
     R "下载失败,请手动安装 Go 1.21+"; exit 1
   }
   rm -rf /usr/local/go
+  mkdir -p /usr/local
   tar -C /usr/local -xzf go.tar.gz
   rm -f go.tar.gz
   export PATH="/usr/local/go/bin:$PATH"
