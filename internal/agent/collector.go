@@ -25,6 +25,14 @@ type Collector struct {
 	prevTime              time.Time
 	cpuModel              string
 	cpuCount              int
+	prevProc              map[int32]procSample
+	prevProcTime          time.Time
+}
+
+// procSample caches a process's accumulated CPU time and collection moment.
+type procSample struct {
+	cpuTime float64
+	ts      time.Time
 }
 
 // procEntry pairs a process handle with its memory percent for sorting.
@@ -158,6 +166,11 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 	}
 
 	if procs, err := process.Processes(); err == nil {
+		// Sample every process's accumulated CPU time first so that
+		// delta-based instantaneous CPU% can be computed against the
+		// previous snapshot for ALL processes, not just the top-10 by
+		// memory. This is what makes the CPU% column actually move.
+		curProc := make(map[int32]procSample, len(procs))
 		entries := make([]procEntry, 0, len(procs))
 		for _, p := range procs {
 			m, err := p.MemoryPercent()
@@ -165,20 +178,31 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 				continue
 			}
 			entries = append(entries, procEntry{p, float64(m)})
+			if t, err := p.Times(); err == nil {
+				curProc[p.Pid] = procSample{cpuTime: t.Total(), ts: now}
+			}
 		}
 		sort.Slice(entries, func(i, j int) bool { return entries[i].m > entries[j].m })
 		if len(entries) > 10 {
 			entries = entries[:10]
 		}
+		dt := now.Sub(c.prevProcTime).Seconds()
 		for _, e := range entries {
 			nm, _ := e.p.Name()
-			cpuPct, _ := e.p.CPUPercent()
+			cpuPct := 0.0
+			if cur, ok := curProc[e.p.Pid]; ok {
+				if prev, ok := c.prevProc[e.p.Pid]; ok && dt > 0 && cur.cpuTime >= prev.cpuTime {
+					cpuPct = (cur.cpuTime - prev.cpuTime) / dt * 100
+				}
+			}
 			pi := proto.ProcessInfo{PID: e.p.Pid, Name: nm, CPU: cpuPct}
 			if mem, _ := e.p.MemoryInfo(); mem != nil {
 				pi.Memory = mem.RSS
 			}
 			s.Processes = append(s.Processes, pi)
 		}
+		c.prevProc = curProc
+		c.prevProcTime = now
 	}
 
 	if conns, err := net.Connections("tcp"); err == nil {
