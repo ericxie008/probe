@@ -329,6 +329,82 @@ async function loadHistory(id) {
   } catch (e) {}
 }
 
+// ---------- 部署面板 ----------
+let deploySecret = "";
+async function showDeploy() {
+  // 拉取部署信息(只需一次)
+  if (!deploySecret) {
+    try {
+      const r = await fetch("/api/deploy");
+      const d = await r.json();
+      deploySecret = d.secret || "";
+    } catch (e) { alert("获取部署信息失败"); return; }
+  }
+  const host = location.host; // 含端口,如 us.xxx:8553
+  const isTLS = location.protocol === "https:";
+  const tlsFlag = isTLS ? " -tls" : "";
+  const insecureFlag = isTLS ? " -insecure" : "";
+
+  const installCmd = `# 一键安装 Agent(Linux)\n` +
+    `git clone https://github.com/ericxie008/probe.git probe && cd probe\n` +
+    `sudo SERVER=${host} TOKEN=${deploySecret} TLS=1${isTLS ? " INSECURE=1" : ""} NAME=主机名 ./scripts/install-agent.sh`;
+
+  const upgradeCmd = `# 升级 Agent(重新编译 + 重启)\n` +
+    `cd ~/probe && git pull\n` +
+    `export PATH="/usr/local/go/bin:$PATH"\n` +
+    `go build -trimpath -ldflags "-s -w" -o /opt/probe-agent/agent ./cmd/agent\n` +
+    `systemctl restart probe-agent`;
+
+  const manualCmd = `# 手动运行 Agent(不用脚本)\n` +
+    `./agent -server ${host} -token ${deploySecret} -name "主机名"${tlsFlag}${insecureFlag}`;
+
+  // 构建模态框
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.id = "deployModal";
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-head">
+        <h2>部署与升级</h2>
+        <button class="modal-close" onclick="document.getElementById('deployModal').remove()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="cmd-section">
+          <div class="cmd-title"><span>安装新 Agent</span><button class="copy-btn" onclick="copyCmd(this, '${btoa(installCmd)}')">复制</button></div>
+          <pre class="cmd-block" id="cmdInstall"></pre>
+        </div>
+        <div class="cmd-section">
+          <div class="cmd-title"><span>升级已有 Agent</span><button class="copy-btn" onclick="copyCmd(this, '${btoa(upgradeCmd)}')">复制</button></div>
+          <pre class="cmd-block" id="cmdUpgrade"></pre>
+        </div>
+        <div class="cmd-section">
+          <div class="cmd-title"><span>手动运行</span><button class="copy-btn" onclick="copyCmd(this, '${btoa(manualCmd)}')">复制</button></div>
+          <pre class="cmd-block" id="cmdManual"></pre>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  // 填入文本(避免 HTML 注入,用 textContent)
+  document.getElementById("cmdInstall").textContent = installCmd;
+  document.getElementById("cmdUpgrade").textContent = upgradeCmd;
+  document.getElementById("cmdManual").textContent = manualCmd;
+}
+
+function copyCmd(btn, encoded) {
+  const text = atob(encoded);
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = "已复制";
+    setTimeout(() => btn.textContent = "复制", 1500);
+  }).catch(() => {
+    // fallback
+    const ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); ta.remove();
+    btn.textContent = "已复制"; setTimeout(() => btn.textContent = "复制", 1500);
+  });
+}
+
 async function doLogout() {
   try {
     await fetch("/api/logout", { method: "POST" });
@@ -341,7 +417,7 @@ function esc(s) {
 }
 
 // 启动
-const header = `<header><div class="brand"><span class="dot"></span>探针 · 服务器监控</div><div class="header-right"><span class="summary">连接中…</span><button class="logout-btn" id="logoutBtn" title="退出登录" onclick="doLogout()">退出</button></div></header>`;
+const header = `<header><div class="brand"><span class="dot"></span>探针 · 服务器监控</div><div class="header-right"><span class="summary">连接中…</span><button class="deploy-btn" onclick="showDeploy()" title="部署与升级">部署</button><button class="logout-btn" id="logoutBtn" title="退出登录" onclick="doLogout()">退出</button></div></header>`;
 document.body.insertAdjacentHTML("afterbegin", header);
 connect();
 route();

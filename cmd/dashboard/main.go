@@ -44,7 +44,7 @@ func main() {
 	}()
 
 	hub := dashboard.NewHub(store, *secret)
-	api := dashboard.NewServer(store, hub, *webToken)
+	api := dashboard.NewServer(store, hub, *webToken, *secret, *addr)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/agent", api.AgentHandler())

@@ -47,6 +47,8 @@ type Server struct {
 	store    *Store
 	mux      *http.ServeMux
 	webToken string
+	secret     string
+	listenAddr string
 
 	sessMu   sync.Mutex
 	sessions map[string]time.Time // token -> expiry
@@ -61,10 +63,11 @@ type loginBucket struct {
 }
 
 // NewServer builds a Server backed by the given store/hub.
-func NewServer(store *Store, hub *Hub, webToken string) *Server {
+func NewServer(store *Store, hub *Hub, webToken, secret, listenAddr string) *Server {
 	s := &Server{
 		hub: hub, store: store, mux: http.NewServeMux(),
-		webToken: webToken, sessions: make(map[string]time.Time),
+		webToken: webToken, secret: secret, listenAddr: listenAddr,
+		sessions: make(map[string]time.Time),
 		loginFails: make(map[string]*loginBucket),
 	}
 	s.routes()
@@ -76,6 +79,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/ws", s.gateWeb(s.handleViewerWS))
 	s.mux.HandleFunc("/api/servers", s.gateWeb(s.handleServers))
 	s.mux.HandleFunc("/api/servers/", s.gateWeb(s.handleServerDetail))
+	s.mux.HandleFunc("/api/deploy", s.gateWeb(s.handleDeploy))
 }
 
 func (s *Server) LoginPageHandler() http.HandlerFunc { return s.handleLoginPage }
@@ -292,6 +296,13 @@ func (s *Server) handleViewerWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.hub.HandleViewer(ws)
+}
+
+// GET /api/deploy -> returns connection info for generating agent install commands.
+func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]any{
+		"secret": s.secret,
+	})
 }
 
 // GET /api/servers -> all known servers with latest state.
