@@ -45,7 +45,7 @@ function connect() {
     if (msg.type === "state") {
       states[msg.data.agent_id] = msg.data;
       if (selected === msg.data.agent_id) updateDetail();
-      else renderList();
+      else if (!selected) renderList();
     }
   };
 }
