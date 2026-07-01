@@ -3,7 +3,6 @@ package dashboard
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -101,20 +100,6 @@ func (s *Store) RememberAgent(id, name string) {
 		return
 	}
 	s.mu.RUnlock()
-	// Check for an older record with the same display name but different ID.
-	rows, _ := s.db.Query(`SELECT id FROM servers WHERE name=? AND id!=?`, name, id)
-	var oldIDs []string
-	for rows.Next() {
-		var oldID string
-		if rows.Scan(&oldID) == nil {
-			oldIDs = append(oldIDs, oldID)
-		}
-	}
-	rows.Close()
-
-	for _, old := range oldIDs {
-		s.migrateAgent(old, id)
-	}
 
 	s.mu.Lock()
 	s.known[id] = name
@@ -124,18 +109,6 @@ func (s *Store) RememberAgent(id, name string) {
 		 ON CONFLICT(id) DO UPDATE SET name=excluded.name`,
 		id, name, time.Now().Unix(),
 	)
-}
-
-// migrateAgent moves all metrics from oldID to newID, deletes the old server
-// record, and clears the old entry from in-memory caches.
-func (s *Store) migrateAgent(oldID, newID string) {
-	s.mu.Lock()
-	delete(s.latest, oldID)
-	delete(s.known, oldID)
-	s.mu.Unlock()
-	_, _ = s.db.Exec(`UPDATE metrics SET agent_id=? WHERE agent_id=?`, newID, oldID)
-	_, _ = s.db.Exec(`DELETE FROM servers WHERE id=?`, oldID)
-	log.Printf("migrated agent %s -> %s", oldID, newID)
 }
 
 // UpdateState stores a fresh snapshot: updates the hot cache and inserts a row.
