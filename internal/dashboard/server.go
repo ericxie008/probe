@@ -360,7 +360,8 @@ func (s *Server) handleServers(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleServerDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Path[len("/api/servers/"):]
 	detailID, rest := splitFirst(id, "/")
-	if rest == "rename" && r.Method == http.MethodPost {
+
+	// POST /api/servers/{id}/delete
 	if rest == "delete" && r.Method == http.MethodPost {
 		if err := s.store.Delete(detailID); err != nil {
 			http.Error(w, "delete failed", http.StatusInternalServerError)
@@ -370,7 +371,10 @@ func (s *Server) handleServerDetail(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"ok": true})
 		return
 	}
-	var body struct{ Name string `json:"name"` }
+
+	// POST /api/servers/{id}/rename
+	if rest == "rename" && r.Method == http.MethodPost {
+		var body struct{ Name string `json:"name"` }
 		r.Body = http.MaxBytesReader(w, r.Body, 4096)
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Name) == "" {
 			http.Error(w, "name required", http.StatusBadRequest)

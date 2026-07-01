@@ -30,6 +30,7 @@ ensure_go() {
     local gover
     gover=$(go version 2>/dev/null | grep -oE 'go[0-9]+\.[0-9]+' | head -1 | sed 's/go//')
     local major="${gover%%.*}" minor="${gver#*.}"
+    local major="${gover%%.*}" minor="${gover#*.}"
     # Go 版本号是 1.xx 格式,比较 major.minor * 100 转成整数
     local ver_num=$(( major * 100 + minor ))
     if (( ver_num >= 121 )); then
