@@ -34,10 +34,20 @@ func NewStore(path string) (*Store, error) {
 	if _, err := db.Exec(schema); err != nil {
 		return nil, err
 	}
+	// Load deleted set from SQLite (survives restarts)
+	deleted := make(map[string]struct{})
+	drows, _ := db.Query(`SELECT id FROM deleted_servers`)
+	for drows.Next() {
+		var did string
+		if drows.Scan(&did) == nil {
+			deleted[did] = struct{}{}
+		}
+	}
+	drows.Close()
 	return &Store{
 		latest:  make(map[string]*proto.State),
 		known:   make(map[string]string),
-		deleted: make(map[string]struct{}),
+		deleted: deleted,
 		db:     db,
 	}, nil
 }
@@ -68,12 +78,22 @@ CREATE TABLE IF NOT EXISTS metrics (
 	load1     REAL
 );
 CREATE INDEX IF NOT EXISTS idx_metrics_agent_ts ON metrics(agent_id, ts);
+CREATE TABLE IF NOT EXISTS deleted_servers (
+	id TEXT PRIMARY KEY
+);
 `
 
 // RememberAgent records a known agent id/name. If the same agent (by name)
 // reconnects with a new ID (e.g. after upgrade with a lost agent.id file),
 // the old record's history is migrated to the new ID and the old one deleted.
 func (s *Store) RememberAgent(id, name string) {
+	// Ignore if this agent was admin-deleted
+	s.mu.RLock()
+	if _, gone := s.deleted[id]; gone {
+		s.mu.RUnlock()
+		return
+	}
+	s.mu.RUnlock()
 	// Check for an older record with the same display name but different ID.
 	rows, _ := s.db.Query(`SELECT id FROM servers WHERE name=? AND id!=?`, name, id)
 	var oldIDs []string
@@ -227,10 +247,15 @@ func (s *Store) Delete(id string) error {
 	delete(s.known, id)
 	s.deleted[id] = struct{}{} // block re-registration
 	s.mu.Unlock()
+	// Persist to SQLite so it survives restarts
+	_, err := s.db.Exec(`INSERT OR REPLACE INTO deleted_servers(id) VALUES(?)`, id)
+	if err != nil {
+		return err
+	}
 	if _, err := s.db.Exec(`DELETE FROM metrics WHERE agent_id=?`, id); err != nil {
 		return err
 	}
-	_, err := s.db.Exec(`DELETE FROM servers WHERE id=?`, id)
+	_, err = s.db.Exec(`DELETE FROM servers WHERE id=?`, id)
 	return err
 }
 // overrideName returns the admin-set display name for an agent, if any.
