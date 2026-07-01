@@ -230,8 +230,12 @@ function fillTable(id, rows) {
 // ---------- 图表 ----------
 function initCharts() {
   charts[selected] = {
-    cpu: makeChart("cpuChart", ["#2f81f7"], 100),
-    net: makeChart("netChart", ["#a371f7", "#3fb950", "#d29922"]),
+    cpu: makeChart("cpuChart", [{c:"#2f81f7",label:"CPU"}], 100),
+    net: makeChart("netChart", [
+      {c:"#a371f7",label:"内存%"},
+      {c:"#3fb950",label:"↓"},
+      {c:"#d29922",label:"↑"},
+    ]),
   };
 }
 function makeChart(id, colors, max) {
@@ -239,7 +243,7 @@ function makeChart(id, colors, max) {
   if (!ctx) return null;
   return new Chart(ctx, {
     type: "line",
-    data: { labels: [], datasets: colors.map(c => ({ borderColor: c, backgroundColor: c+"22", data: [], tension: .3, pointRadius: 0, borderWidth: 2, fill: true })) },
+    data: { labels: [], datasets: colors.map(d => ({ label: d.label, borderColor: d.c, backgroundColor: d.c+"22", data: [], tension: .3, pointRadius: 0, borderWidth: 2, fill: true })) },
     options: {
       animation: false, responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: colors.length > 1, labels: { color: "#8b949e", boxWidth: 10 } } },
