@@ -61,7 +61,7 @@ func (c *Client) Run() {
 			log.Printf("agent disconnected: %v", err)
 		}
 		time.Sleep(backoff)
-		if backoff < 30*time.Second {
+		if backoff < 60*time.Second {
 			backoff *= 2
 		}
 	}

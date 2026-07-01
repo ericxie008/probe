@@ -56,6 +56,9 @@ func main() {
 	mux.Handle("/", api.GateStatic(safeStatic(http.FileServer(http.Dir("web")))))
 
 	srv := &http.Server{Addr: *addr, Handler: mux}
+	srv.ReadTimeout = 15 * time.Second
+	srv.WriteTimeout = 30 * time.Second
+	srv.IdleTimeout = 120 * time.Second
 
 	// Graceful shutdown on SIGTERM / SIGINT (systemd stop, Ctrl-C).
 	go func() {

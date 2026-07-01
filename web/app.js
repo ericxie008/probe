@@ -7,6 +7,7 @@ const charts = {};      // agentID -> {cpu, mem, net}
 let overrideNames = {}; // 本地缓存改名,防止 WS 推送覆盖
 let sortKey = "status"; // 排序字段: status|name|cpu|mem|disk|net
 let sortDir = -1;       // -1=降序(高优先), 1=升序
+let renderTimer = null;  // 渲染节流
 
 const fmt = {
   bytes(n) {
@@ -47,7 +48,11 @@ function connect() {
       if (overrideNames[msg.data.agent_id]) msg.data.name = overrideNames[msg.data.agent_id];
       states[msg.data.agent_id] = msg.data;
       if (selected === msg.data.agent_id) updateDetail();
-      else if (!selected) renderList();
+      else if (!selected) {
+        // 节流:100ms 内多次更新只渲染一次,减少 DOM 操作
+        if (renderTimer) clearTimeout(renderTimer);
+        renderTimer = setTimeout(() => { renderTimer = null; renderList(); }, 100);
+      }
     }
   };
 }
@@ -231,6 +236,11 @@ function fillTable(id, rows) {
 
 // ---------- 图表 ----------
 function initCharts() {
+  // 销毁旧实例,防止内存泄漏
+  if (charts[selected]) {
+    if (charts[selected].cpu) charts[selected].cpu.destroy();
+    if (charts[selected].net) charts[selected].net.destroy();
+  }
   charts[selected] = {
     cpu: makeChart("cpuChart", [{c:"#2f81f7",label:"CPU"}], 100),
     net: makeChart("netChart", [

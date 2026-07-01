@@ -31,6 +31,9 @@ func NewStore(path string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1) // sqlite serializes writes anyway
+	// 启用 WAL 模式提高并发读写性能,设 busy_timeout 防止锁冲突
+	_, _ = db.Exec(`PRAGMA journal_mode=WAL`)
+	_, _ = db.Exec(`PRAGMA busy_timeout=5000`)
 	if _, err := db.Exec(schema); err != nil {
 		return nil, err
 	}

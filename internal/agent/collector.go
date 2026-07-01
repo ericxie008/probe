@@ -73,11 +73,14 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 		s.Load1, s.Load5, s.Load15 = lv.Load1, lv.Load5, lv.Load15
 	}
 
-	if pct, err := cpu.Percent(time.Second, false); err == nil && len(pct) > 0 {
-		s.CPUUsage = pct[0]
-	}
-	if perCore, err := cpu.Percent(time.Second, true); err == nil {
+	// 只采样一次(1秒阻塞),同时拿到总使用率和每核使用率,避免双倍阻塞。
+	if perCore, err := cpu.Percent(time.Second, true); err == nil && len(perCore) > 0 {
 		s.CPUPerCore = perCore
+		var sum float64
+		for _, v := range perCore {
+			sum += v
+		}
+		s.CPUUsage = sum / float64(len(perCore))
 	}
 	s.CPUModel = c.cpuModel
 	s.CPUCount = c.cpuCount
