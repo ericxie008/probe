@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"database/sql"
+	"log"
 	"sync"
 	"time"
 
@@ -69,8 +70,25 @@ CREATE TABLE IF NOT EXISTS metrics (
 CREATE INDEX IF NOT EXISTS idx_metrics_agent_ts ON metrics(agent_id, ts);
 `
 
-// RememberAgent records a known agent id/name.
+// RememberAgent records a known agent id/name. If the same agent (by name)
+// reconnects with a new ID (e.g. after upgrade with a lost agent.id file),
+// the old record's history is migrated to the new ID and the old one deleted.
 func (s *Store) RememberAgent(id, name string) {
+	// Check for an older record with the same display name but different ID.
+	rows, _ := s.db.Query(`SELECT id FROM servers WHERE name=? AND id!=?`, name, id)
+	var oldIDs []string
+	for rows.Next() {
+		var oldID string
+		if rows.Scan(&oldID) == nil {
+			oldIDs = append(oldIDs, oldID)
+		}
+	}
+	rows.Close()
+
+	for _, old := range oldIDs {
+		s.migrateAgent(old, id)
+	}
+
 	s.mu.Lock()
 	s.known[id] = name
 	s.mu.Unlock()
@@ -79,6 +97,18 @@ func (s *Store) RememberAgent(id, name string) {
 		 ON CONFLICT(id) DO UPDATE SET name=excluded.name`,
 		id, name, time.Now().Unix(),
 	)
+}
+
+// migrateAgent moves all metrics from oldID to newID, deletes the old server
+// record, and clears the old entry from in-memory caches.
+func (s *Store) migrateAgent(oldID, newID string) {
+	s.mu.Lock()
+	delete(s.latest, oldID)
+	delete(s.known, oldID)
+	s.mu.Unlock()
+	_, _ = s.db.Exec(`UPDATE metrics SET agent_id=? WHERE agent_id=?`, newID, oldID)
+	_, _ = s.db.Exec(`DELETE FROM servers WHERE id=?`, oldID)
+	log.Printf("migrated agent %s -> %s", oldID, newID)
 }
 
 // UpdateState stores a fresh snapshot: updates the hot cache and inserts a row.
