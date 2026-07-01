@@ -363,7 +363,8 @@ async function showDeploy() {
 
   const installCmd = `# 一键安装 Agent(Linux)\n` +
     `git clone ${cloneUrl} probe && cd probe\n` +
-    `sudo SERVER=${host} TOKEN=${deploySecret || "<填入密钥: " + maskedSecret + ">"} TLS=1${isTLS ? " INSECURE=1" : ""} NAME=主机名 ./scripts/install-agent.sh`;
+    `sudo SERVER=${host} TOKEN=${deploySecret || "<填入密钥: " + maskedSecret + ">"} TLS=1${isTLS ? " INSECURE=1" : ""} ./scripts/install-agent.sh
+# NAME 不传默认用系统主机名,自动唯一`;
 
   const upgradeCmd = `# 升级 Agent(重新编译 + 重启)\n` +
     `cd ~/probe && git pull\n` +
@@ -372,7 +373,8 @@ async function showDeploy() {
     `systemctl restart probe-agent`;
 
   const manualCmd = `# 手动运行 Agent(不用脚本)\n` +
-    `./agent -server ${host} -token ${deploySecret || "<填入密钥>"} -name "主机名"${tlsFlag}${insecureFlag}`;
+    `./agent -server ${host} -token ${deploySecret || "<填入密钥>"} # -name 可选,不传默认用主机名
+    ./agent -server ${host} -token ${deploySecret || "<填入密钥>"}${tlsFlag}${insecureFlag}${insecureFlag}`;
 
   const dashInstallCmd = `# 一键安装 Dashboard(服务端)\n` +
     `git clone ${cloneUrl} probe && cd probe\n` +
