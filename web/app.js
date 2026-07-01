@@ -362,13 +362,26 @@ async function showDeploy() {
 
   const manualCmd = `# 手动运行 Agent(不用脚本)\n` +
     `./agent -server ${host} -token ${deploySecret} -name "主机名"${tlsFlag}${insecureFlag}`;
+  const dashInstallCmd = `# 一键安装 Dashboard(服务端)\n` +
+    `git clone https://github.com/ericxie008/probe.git probe && cd probe\n` +
+    `sudo CERT="你的证书路径" KEY="你的私钥路径" ./scripts/install-dashboard.sh\n` +
+    `# 无已有证书用域名自动申请:\n` +
+    `# sudo DOMAIN=${hostname} ./scripts/install-dashboard.sh`;
+
+  const dashUpgradeCmd = `# 升级 Dashboard(重新编译 + 重启)\n` +
+    `cd ~/probe && git pull\n` +
+    `export PATH="/usr/local/go/bin:$PATH"\n` +
+    `go build -trimpath -ldflags "-s -w" -o /opt/probe/dashboard ./cmd/dashboard\n` +
+    `cp -r web /opt/probe/\n` +
+    `systemctl restart probe-dashboard`;
 
   // 构建模态框
   const modal = document.createElement("div");
   modal.className = "modal-overlay";
   modal.id = "deployModal";
   modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
-  deployCmds = { install: installCmd, upgrade: upgradeCmd, manual: manualCmd };
+  const hostname = host.split(":")[0];
+  deployCmds = { dashInstall: dashInstallCmd, dashUpgrade: dashUpgradeCmd, install: installCmd, upgrade: upgradeCmd, manual: manualCmd };
   modal.innerHTML = `
     <div class="modal">
       <div class="modal-head">
@@ -376,6 +389,16 @@ async function showDeploy() {
         <button class="modal-close" onclick="document.getElementById('deployModal').remove()">✕</button>
       </div>
       <div class="modal-body">
+        <div class="cmd-group-title">Dashboard(服务端)</div>
+        <div class="cmd-section">
+          <div class="cmd-title"><span>安装 Dashboard</span><button class="copy-btn" onclick="copyCmd(this, 'dashInstall')">复制</button></div>
+          <pre class="cmd-block" id="cmdDashInstall"></pre>
+        </div>
+        <div class="cmd-section">
+          <div class="cmd-title"><span>升级 Dashboard</span><button class="copy-btn" onclick="copyCmd(this, 'dashUpgrade')">复制</button></div>
+          <pre class="cmd-block" id="cmdDashUpgrade"></pre>
+        </div>
+        <div class="cmd-group-title">Agent(被监控机)</div>
         <div class="cmd-section">
           <div class="cmd-title"><span>安装新 Agent</span><button class="copy-btn" onclick="copyCmd(this, 'install')">复制</button></div>
           <pre class="cmd-block" id="cmdInstall"></pre>
@@ -392,6 +415,8 @@ async function showDeploy() {
     </div>`;
   document.body.appendChild(modal);
   // 填入文本(避免 HTML 注入,用 textContent)
+  document.getElementById("cmdDashInstall").textContent = dashInstallCmd;
+  document.getElementById("cmdDashUpgrade").textContent = dashUpgradeCmd;
   document.getElementById("cmdInstall").textContent = installCmd;
   document.getElementById("cmdUpgrade").textContent = upgradeCmd;
   document.getElementById("cmdManual").textContent = manualCmd;
