@@ -415,6 +415,10 @@ func (s *Server) AgentHandler() http.HandlerFunc  { return s.handleAgentWS }
 func (s *Server) ViewerHandler() http.HandlerFunc { return s.gateWeb(s.handleViewerWS) }
 func (s *Server) APIHandler() http.HandlerFunc {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/deploy" {
+			s.handleDeploy(w, r)
+			return
+		}
 		if r.URL.Path == "/api/servers" {
 			s.handleServers(w, r)
 			return
