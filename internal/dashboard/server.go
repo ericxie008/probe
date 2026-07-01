@@ -43,10 +43,10 @@ func checkOrigin(r *http.Request) bool {
 
 // Server wires the hub, store, and HTTP routes together.
 type Server struct {
-	hub      *Hub
-	store    *Store
-	mux      *http.ServeMux
-	webToken string
+	hub        *Hub
+	store      *Store
+	mux        *http.ServeMux
+	webToken   string
 	secret     string
 	listenAddr string
 
@@ -67,7 +67,7 @@ func NewServer(store *Store, hub *Hub, webToken, secret, listenAddr string) *Ser
 	s := &Server{
 		hub: hub, store: store, mux: http.NewServeMux(),
 		webToken: webToken, secret: secret, listenAddr: listenAddr,
-		sessions: make(map[string]time.Time),
+		sessions:   make(map[string]time.Time),
 		loginFails: make(map[string]*loginBucket),
 	}
 	s.routes()
@@ -250,7 +250,9 @@ func (s *Server) handleAPILogin(w http.ResponseWriter, r *http.Request) {
 	got := ""
 	r.Body = http.MaxBytesReader(w, r.Body, 1024)
 	if r.Header.Get("Content-Type") == "application/json" {
-		var body struct{ Password string `json:"password"` }
+		var body struct {
+			Password string `json:"password"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
 			got = body.Password
 		}
@@ -336,7 +338,7 @@ func (s *Server) handleServers(w http.ResponseWriter, r *http.Request) {
 	for _, sv := range servers {
 		row := out{ID: sv.ID, Name: sv.Name}
 		if st := latest[sv.ID]; st != nil {
-			row.Online = true
+			row.Online = time.Now().Unix()-st.Timestamp < 30
 			row.CPUUsage = st.CPUUsage
 			row.MemUsed = st.MemoryUsed
 			row.MemTotal = st.MemoryTotal
@@ -374,7 +376,9 @@ func (s *Server) handleServerDetail(w http.ResponseWriter, r *http.Request) {
 
 	// POST /api/servers/{id}/rename
 	if rest == "rename" && r.Method == http.MethodPost {
-		var body struct{ Name string `json:"name"` }
+		var body struct {
+			Name string `json:"name"`
+		}
 		r.Body = http.MaxBytesReader(w, r.Body, 4096)
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Name) == "" {
 			http.Error(w, "name required", http.StatusBadRequest)

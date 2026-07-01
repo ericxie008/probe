@@ -4,6 +4,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/shirou/gopsutil/v3/cpu"
@@ -93,11 +94,21 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 	s.CPUModel = c.cpuModel
 	s.CPUCount = c.cpuCount
 	if temps, err := host.SensorsTemperatures(); err == nil {
+		fallback := 0.0
 		for _, t := range temps {
-			if t.Temperature > 0 {
+			if t.Temperature <= 0 {
+				continue
+			}
+			if isCPUSensor(t.SensorKey) {
 				s.CPUTemp = t.Temperature
 				break
 			}
+			if fallback == 0 {
+				fallback = t.Temperature
+			}
+		}
+		if s.CPUTemp == 0 {
+			s.CPUTemp = fallback
 		}
 	}
 	if s.CPUTemp == 0 {
@@ -114,13 +125,12 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 	}
 
 	if parts, err := disk.Partitions(false); err == nil {
+		seen := make(map[string]struct{})
 		for _, p := range parts {
 			u, err := disk.Usage(p.Mountpoint)
 			if err != nil || u == nil {
 				continue
 			}
-			s.DiskTotal += u.Total
-			s.DiskUsed += u.Used
 			s.Disks = append(s.Disks, proto.DiskInfo{
 				Device:     p.Device,
 				Mountpoint: p.Mountpoint,
@@ -128,6 +138,18 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 				Total:      u.Total,
 				Used:       u.Used,
 			})
+			// Aggregate by unique device to avoid double-counting
+			// bind mounts / btrfs subvolumes / APFS containers.
+			key := p.Device
+			if key == "" {
+				key = p.Mountpoint
+			}
+			if _, dup := seen[key]; dup {
+				continue
+			}
+			seen[key] = struct{}{}
+			s.DiskTotal += u.Total
+			s.DiskUsed += u.Used
 		}
 	}
 
@@ -256,4 +278,18 @@ func readLinuxThermal() float64 {
 		}
 	}
 	return 0
+}
+
+// isCPUSensor reports whether a sensor name likely represents a CPU
+// temperature (coretemp, k10temp, Tctl, etc.) rather than an ACPI,
+// motherboard, or disk sensor.
+func isCPUSensor(key string) bool {
+	k := strings.ToLower(key)
+	for _, p := range []string{"coretemp", "k10temp", "k8temp", "cpu_thermal",
+		"cpu-thermal", "cputemp", "tctl", "tdie", "package", "socket"} {
+		if strings.Contains(k, p) {
+			return true
+		}
+	}
+	return false
 }
