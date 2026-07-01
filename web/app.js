@@ -366,10 +366,12 @@ async function showDeploy() {
     `sudo SERVER=${host} TOKEN=${deploySecret || "<填入密钥: " + maskedSecret + ">"} TLS=1${isTLS ? " INSECURE=1" : ""} ./scripts/install-agent.sh\n` +
     `# NAME 不传默认用系统主机名,自动唯一`;
 
-  const upgradeCmd = `# 升级 Agent(重新编译 + 重启)\n` +
+  const upgradeCmd = `# 升级 Agent\n` +
     `cd ~/probe && git pull\n` +
     `export PATH="/usr/local/go/bin:$PATH"\n` +
     `go build -trimpath -ldflags "-s -w" -o /opt/probe-agent/agent ./cmd/agent\n` +
+    `# 确保 service 文件存在\n` +
+    `systemctl cat probe-agent >/dev/null 2>&1 || sudo SERVER=${host} TOKEN=${deploySecret || "<密钥>"} TLS=1${isTLS ? " INSECURE=1" : ""} ./scripts/install-agent.sh\n` +
     `systemctl restart probe-agent`;
 
   const manualCmd = `# 手动运行 Agent(不用脚本)\n` +
@@ -382,11 +384,14 @@ async function showDeploy() {
     `# 无已有证书用域名自动申请:\n` +
     `# sudo DOMAIN=${hostname} ./scripts/install-dashboard.sh`;
 
-  const dashUpgradeCmd = `# 升级 Dashboard(重新编译 + 重启)\n` +
+  const dashUpgradeCmd = `# 升级 Dashboard\n` +
     `cd ~/probe && git pull\n` +
     `export PATH="/usr/local/go/bin:$PATH"\n` +
     `go build -trimpath -ldflags "-s -w" -o /opt/probe/dashboard ./cmd/dashboard\n` +
     `cp -r web /opt/probe/\n` +
+    `mkdir -p /opt/probe/data\n` +
+    `# 确保 service 文件存在(不存在则自动创建)\n` +
+    `systemctl cat probe-dashboard >/dev/null 2>&1 || sudo ./scripts/install-dashboard.sh\n` +
     `systemctl restart probe-dashboard`;
 
   deployCmds = { dashInstall: dashInstallCmd, dashUpgrade: dashUpgradeCmd, install: installCmd, upgrade: upgradeCmd, manual: manualCmd };
