@@ -458,4 +458,18 @@ function esc(s) {
 const header = `<header><div class="brand"><span class="dot"></span>探针 · 服务器监控</div><div class="header-right"><span class="summary">连接中…</span><button class="deploy-btn" onclick="showDeploy()" title="部署与升级">部署</button><button class="logout-btn" id="logoutBtn" title="退出登录" onclick="doLogout()">退出</button></div></header>`;
 document.body.insertAdjacentHTML("afterbegin", header);
 connect();
+initOverrideNames();
 route();
+
+// 页面加载时从 API 拉取名字缓存,防止刷新后改名丢失
+async function initOverrideNames() {
+  try {
+    const r = await fetch("/api/servers");
+    const list = await r.json();
+    if (Array.isArray(list)) {
+      for (const s of list) {
+        if (s.name) overrideNames[s.id] = s.name;
+      }
+    }
+  } catch (e) {}
+}
