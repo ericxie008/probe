@@ -329,12 +329,19 @@ async function loadHistory(id) {
   } catch (e) {}
 }
 
+async function doLogout() {
+  try {
+    await fetch("/api/logout", { method: "POST" });
+  } catch (e) {}
+  location.href = "/login";
+}
+
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
 }
 
 // 启动
-const header = `<header><div class="brand"><span class="dot"></span>探针 · 服务器监控</div><div class="summary">连接中…</div></header>`;
+const header = `<header><div class="brand"><span class="dot"></span>探针 · 服务器监控</div><div class="header-right"><span class="summary">连接中…</span><button class="logout-btn" id="logoutBtn" title="退出登录" onclick="doLogout()">退出</button></div></header>`;
 document.body.insertAdjacentHTML("afterbegin", header);
 connect();
 route();

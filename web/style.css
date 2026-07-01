@@ -220,3 +220,21 @@ table tbody tr:hover { background: rgba(255,255,255,0.02); }
 /* Delete button */
 .del-btn { color: var(--red) !important; opacity: 0.4; }
 .del-btn:hover { opacity: 1 !important; color: var(--red) !important; }
+
+/* Header right section */
+.header-right { display: flex; align-items: center; gap: 16px; }
+.logout-btn {
+  background: rgba(248,81,73,0.08);
+  color: var(--red);
+  border: 1px solid rgba(248,81,73,0.2);
+  border-radius: 7px;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .15s;
+}
+.logout-btn:hover {
+  background: rgba(248,81,73,0.15);
+  border-color: var(--red);
+}
