@@ -346,6 +346,7 @@ async function showDeploy() {
     } catch (e) { alert("获取部署信息失败"); return; }
   }
   const host = location.host; // 含端口,如 us.xxx:8553
+  const hostname = host.split(":")[0];
   const isTLS = location.protocol === "https:";
   const tlsFlag = isTLS ? " -tls" : "";
   const insecureFlag = isTLS ? " -insecure" : "";
@@ -380,7 +381,6 @@ async function showDeploy() {
   modal.className = "modal-overlay";
   modal.id = "deployModal";
   modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
-  const hostname = host.split(":")[0];
   deployCmds = { dashInstall: dashInstallCmd, dashUpgrade: dashUpgradeCmd, install: installCmd, upgrade: upgradeCmd, manual: manualCmd };
   modal.innerHTML = `
     <div class="modal">
