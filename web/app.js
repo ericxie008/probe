@@ -335,6 +335,7 @@ async function loadHistory(id) {
 
 // ---------- 部署面板 ----------
 let deploySecret = "";
+let deployCmds = {};
 async function showDeploy() {
   // 拉取部署信息(只需一次)
   if (!deploySecret) {
@@ -367,6 +368,7 @@ async function showDeploy() {
   modal.className = "modal-overlay";
   modal.id = "deployModal";
   modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  deployCmds = { install: installCmd, upgrade: upgradeCmd, manual: manualCmd };
   modal.innerHTML = `
     <div class="modal">
       <div class="modal-head">
@@ -375,15 +377,15 @@ async function showDeploy() {
       </div>
       <div class="modal-body">
         <div class="cmd-section">
-          <div class="cmd-title"><span>安装新 Agent</span><button class="copy-btn" onclick="copyCmd(this, '${btoa(installCmd)}')">复制</button></div>
+          <div class="cmd-title"><span>安装新 Agent</span><button class="copy-btn" onclick="copyCmd(this, 'install')">复制</button></div>
           <pre class="cmd-block" id="cmdInstall"></pre>
         </div>
         <div class="cmd-section">
-          <div class="cmd-title"><span>升级已有 Agent</span><button class="copy-btn" onclick="copyCmd(this, '${btoa(upgradeCmd)}')">复制</button></div>
+          <div class="cmd-title"><span>升级已有 Agent</span><button class="copy-btn" onclick="copyCmd(this, 'upgrade')">复制</button></div>
           <pre class="cmd-block" id="cmdUpgrade"></pre>
         </div>
         <div class="cmd-section">
-          <div class="cmd-title"><span>手动运行</span><button class="copy-btn" onclick="copyCmd(this, '${btoa(manualCmd)}')">复制</button></div>
+          <div class="cmd-title"><span>手动运行</span><button class="copy-btn" onclick="copyCmd(this, 'manual')">复制</button></div>
           <pre class="cmd-block" id="cmdManual"></pre>
         </div>
       </div>
@@ -395,8 +397,8 @@ async function showDeploy() {
   document.getElementById("cmdManual").textContent = manualCmd;
 }
 
-function copyCmd(btn, encoded) {
-  const text = atob(encoded);
+function copyCmd(btn, key) {
+  const text = deployCmds[key] || "";
   navigator.clipboard.writeText(text).then(() => {
     btn.textContent = "已复制";
     setTimeout(() => btn.textContent = "复制", 1500);
