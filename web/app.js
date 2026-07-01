@@ -457,9 +457,8 @@ function esc(s) {
 // 启动
 const header = `<header><div class="brand"><span class="dot"></span>探针 · 服务器监控</div><div class="header-right"><span class="summary">连接中…</span><button class="deploy-btn" onclick="showDeploy()" title="部署与升级">部署</button><button class="logout-btn" id="logoutBtn" title="退出登录" onclick="doLogout()">退出</button></div></header>`;
 document.body.insertAdjacentHTML("afterbegin", header);
-connect();
-initOverrideNames();
-route();
+// 先初始化 overrideNames,再连接 WebSocket 和渲染,防止刷新后改名丢失
+initOverrideNames().then(() => { connect(); route(); });
 
 // 页面加载时从 API 拉取名字缓存,防止刷新后改名丢失
 async function initOverrideNames() {
