@@ -180,6 +180,19 @@ func (s *Store) Rename(id, name string) error {
 	_, err := s.db.Exec(`UPDATE servers SET override_name=? WHERE id=?`, name, id)
 	return err
 }
+
+// Delete removes an agent and all its metrics from the database and cache.
+func (s *Store) Delete(id string) error {
+	s.mu.Lock()
+	delete(s.latest, id)
+	delete(s.known, id)
+	s.mu.Unlock()
+	if _, err := s.db.Exec(`DELETE FROM metrics WHERE agent_id=?`, id); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM servers WHERE id=?`, id)
+	return err
+}
 // overrideName returns the admin-set display name for an agent, if any.
 func (s *Store) overrideName(id string) string {
 	var n string

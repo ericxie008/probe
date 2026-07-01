@@ -196,6 +196,14 @@ func (h *Hub) applyRename(id, name string) {
 	}
 }
 
+// removeAgent drops an agent from the in-memory connection map (used after
+// admin deletion so a lingering connection doesn't re-register it).
+func (h *Hub) removeAgent(id string) {
+	h.mu.Lock()
+	delete(h.agents, id)
+	h.mu.Unlock()
+}
+
 func readMsg(ws *websocket.Conn, m *proto.Message) error {
 	_, b, err := ws.ReadMessage()
 	if err != nil {

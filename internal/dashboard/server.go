@@ -343,7 +343,16 @@ func (s *Server) handleServerDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Path[len("/api/servers/"):]
 	detailID, rest := splitFirst(id, "/")
 	if rest == "rename" && r.Method == http.MethodPost {
-		var body struct{ Name string `json:"name"` }
+	if rest == "delete" && r.Method == http.MethodPost {
+		if err := s.store.Delete(detailID); err != nil {
+			http.Error(w, "delete failed", http.StatusInternalServerError)
+			return
+		}
+		s.hub.removeAgent(detailID)
+		writeJSON(w, map[string]any{"ok": true})
+		return
+	}
+	var body struct{ Name string `json:"name"` }
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Name) == "" {
 			http.Error(w, "name required", http.StatusBadRequest)
 			return

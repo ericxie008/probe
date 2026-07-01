@@ -216,3 +216,7 @@ table tbody tr:hover { background: rgba(255,255,255,0.02); }
   table { font-size: 12px; }
   table th, table td { padding: 8px 10px; }
 }
+
+/* Delete button */
+.del-btn { color: var(--red) !important; opacity: 0.4; }
+.del-btn:hover { opacity: 1 !important; color: var(--red) !important; }

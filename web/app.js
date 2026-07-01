@@ -113,6 +113,9 @@ function renderList() {
   app.querySelectorAll(".edit-btn-sm").forEach(btn => {
     btn.onclick = (e) => { e.stopPropagation(); renameAgent(btn.dataset.rename); };
   });
+  app.querySelectorAll(".del-btn").forEach(btn => {
+    btn.onclick = (e) => { e.stopPropagation(); deleteAgent(btn.dataset.del); };
+  });
 }
 
 function card(s) {
@@ -123,7 +126,7 @@ function card(s) {
   return `<div class="card${online ? "" : " offline-card"}" data-id="${s.agent_id}">
     <div class="head">
       <div>
-        <div class="name-row"><span class="name">${esc(s.name)}</span><button class="edit-btn-sm" data-rename="${s.agent_id}" title="修改名称">✎</button></div>
+        <div class="name-row"><span class="name">${esc(s.name)}</span><button class="edit-btn-sm" data-rename="${s.agent_id}" title="修改名称">✎</button>${online ? "" : `<button class="edit-btn-sm del-btn" data-del="${s.agent_id}" title="删除此记录">✕</button>`}</div>
         <div class="os">${esc(s.os||"")} · ${s.cpu_count||"?"} 核 · ${esc(s.arch||"")}</div>
       </div>
       <span class="status ${online ? "online" : "offline"}">${online ? "在线" : "离线"}</span>
@@ -290,6 +293,19 @@ async function renameAgent(id) {
         if (h1) h1.textContent = trimmed;
       } else { renderList(); }
     } else { alert("改名失败: " + r.status); }
+  } catch (e) { alert("网络错误"); }
+}
+
+async function deleteAgent(id) {
+  const s = states[id];
+  if (!s) return;
+  if (!confirm(`确定删除 "${s.name || id}" ?\n此操作会清除该主机的历史数据,不可恢复。`)) return;
+  try {
+    const r = await fetch(`/api/servers/${encodeURIComponent(id)}/delete`, { method: "POST" });
+    if (r.ok) {
+      delete states[id];
+      renderList();
+    } else { alert("删除失败: " + r.status); }
   } catch (e) { alert("网络错误"); }
 }
 
