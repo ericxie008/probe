@@ -4,6 +4,7 @@ let states = {};        // agentID -> latest state
 let selected = null;    // current agentID in detail view
 let ws = null;
 const charts = {};      // agentID -> {cpu, mem, net}
+let overrideNames = {}; // 本地缓存改名,防止 WS 推送覆盖
 let sortKey = "status"; // 排序字段: status|name|cpu|mem|disk|net
 let sortDir = -1;       // -1=降序(高优先), 1=升序
 
@@ -43,6 +44,7 @@ function connect() {
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
     if (msg.type === "state") {
+      if (overrideNames[msg.data.agent_id]) msg.data.name = overrideNames[msg.data.agent_id];
       states[msg.data.agent_id] = msg.data;
       if (selected === msg.data.agent_id) updateDetail();
       else if (!selected) renderList();
@@ -291,6 +293,7 @@ async function renameAgent(id) {
       body: JSON.stringify({ name: trimmed }),
     });
     if (r.ok) {
+      overrideNames[id] = trimmed;
       if (states[id]) states[id].name = trimmed;
       if (selected === id) {
         const h1 = document.getElementById("titleName");
