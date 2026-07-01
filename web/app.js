@@ -1,9 +1,11 @@
 // --- 探针前端: 服务器列表 / 详情 / 实时图表 ---
 const app = document.getElementById("app");
-let states = {};      // agentID -> latest state
-let selected = null;  // current agentID in detail view
+let states = {};        // agentID -> latest state
+let selected = null;    // current agentID in detail view
 let ws = null;
-const charts = {};    // agentID -> {cpu, mem, net}
+const charts = {};      // agentID -> {cpu, mem, net}
+let sortKey = "status"; // 排序字段: status|name|cpu|mem|disk|net
+let sortDir = -1;       // -1=降序(高优先), 1=升序
 
 const fmt = {
   bytes(n) {
@@ -24,15 +26,12 @@ const fmt = {
   },
   time(ts) {
     if (!ts) return "—";
-    const d = new Date(ts * 1000);
-    return d.toLocaleTimeString("zh-CN");
+    return new Date(ts * 1000).toLocaleTimeString("zh-CN");
   },
 };
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  // If the page was opened with ?token=..., forward it on the WS handshake so
-  // the dashboard can authorize the viewer (only needed when a web-token is set).
   const tok = new URLSearchParams(location.search).get("token");
   const wsPath = tok ? "/ws?token=" + encodeURIComponent(tok) : "/ws";
   ws = new WebSocket(proto + "//" + location.host + wsPath);
@@ -51,21 +50,45 @@ function connect() {
   };
 }
 
+// ---------- 排序 ----------
+function sortedIds() {
+  const ids = Object.keys(states);
+  const val = (s) => {
+    switch (sortKey) {
+      case "name":   return (s.name || "").toLowerCase();
+      case "cpu":    return s.cpu_usage || 0;
+      case "mem":    return s.memory_total ? s.memory_used / s.memory_total : 0;
+      case "disk":   return s.disk_total ? s.disk_used / s.disk_total : 0;
+      case "net":    return (s.net_speed_in || 0) + (s.net_speed_out || 0);
+      case "status": return isOnline(s) ? 1 : 0;
+      default:       return 0;
+    }
+  };
+  ids.sort((a, b) => {
+    const va = val(states[a]), vb = val(states[b]);
+    if (typeof va === "string") return sortDir * va.localeCompare(vb);
+    return sortDir * (va > vb ? 1 : va < vb ? -1 : 0);
+  });
+  return ids;
+}
+
+function setSort(key) {
+  if (sortKey === key) { sortDir *= -1; }
+  else { sortKey = key; sortDir = (key === "name") ? 1 : -1; }
+  renderList();
+}
+
+// ---------- 路由 ----------
 function route() {
   const id = location.hash.replace("#/", "");
-  if (id && states[id]) {
-    selected = id;
-    renderDetail();
-  } else {
-    selected = null;
-    renderList();
-  }
+  if (id && states[id]) { selected = id; renderDetail(); }
+  else { selected = null; renderList(); }
 }
 window.addEventListener("hashchange", route);
 
 // ---------- 列表 ----------
 function renderList() {
-  const ids = Object.keys(states);
+  const ids = sortedIds();
   document.querySelector("header .summary").textContent =
     `${ids.length} 台服务器 · ${ids.filter(id => isOnline(states[id])).length} 在线`;
   if (ids.length === 0) {
@@ -73,7 +96,14 @@ function renderList() {
       <p style="color:var(--muted);font-size:12px;margin-top:8px">在服务器上运行 agent 即可接入监控</p></div>`;
     return;
   }
-  let html = '<main><div class="grid">';
+  let html = '<main><div class="toolbar">';
+  const opts = [["status","状态"],["name","名称"],["cpu","CPU"],["mem","内存"],["disk","磁盘"],["net","流量"]];
+  for (const [k, label] of opts) {
+    const active = sortKey === k;
+    const arrow = active ? (sortDir === 1 ? " ↑" : " ↓") : "";
+    html += `<button class="sort-btn${active ? " active" : ""}" onclick="setSort('${k}')">${label}${arrow}</button>`;
+  }
+  html += '</div><div class="grid">';
   for (const id of ids) html += card(states[id]);
   html += "</div></main>";
   app.innerHTML = html;
@@ -90,8 +120,7 @@ function card(s) {
   const memP = fmt.pct(s.memory_used, s.memory_total);
   const cpuP = fmt.pct(s.cpu_usage, 100);
   const diskP = fmt.pct(s.disk_used, s.disk_total);
-  const swapP = fmt.pct(s.swap_used, s.swap_total);
-  return `<div class="card" data-id="${s.agent_id}">
+  return `<div class="card${online ? "" : " offline-card"}" data-id="${s.agent_id}">
     <div class="head">
       <div>
         <div class="name-row"><span class="name">${esc(s.name)}</span><button class="edit-btn-sm" data-rename="${s.agent_id}" title="修改名称">✎</button></div>
@@ -123,7 +152,7 @@ function card(s) {
 
 function isOnline(s) {
   if (!s || !s.timestamp) return false;
-  return Date.now() / 1000 - s.timestamp < 15;
+  return Date.now() / 1000 - s.timestamp < 30;
 }
 
 // ---------- 详情 ----------
@@ -163,29 +192,24 @@ function renderDetail() {
   initCharts();
   bindRename(selected);
   updateDetail();
-  // 拉取历史
   loadHistory(selected);
 }
 
 function updateDetail() {
   const s = states[selected];
   if (!s || !document.getElementById("diskTable")) return;
-  // 更新各表格
   fillTable("diskTable", (s.disks||[]).map(d => [
     d.mountpoint, d.device, d.fs_type,
     fmt.bytes(d.used), fmt.bytes(d.total), fmt.pct(d.used, d.total),
   ]));
   fillTable("netTable", (s.interfaces||[]).map(i => [i.name, i.ipv4||"—", i.ipv6||"—", i.mac||"—"]));
-  fillTable("procTable", (s.processes||[]).map(p => [p.pid, p.name, p.cpu.toFixed(1)+"%", fmt.bytes(p.memory)]));
-  // 推入图表点
+  fillTable("procTable", (s.processes||[]).map(p => [p.pid, p.name, (p.cpu||0).toFixed(1)+"%", fmt.bytes(p.memory)]));
   pushChart(s);
 }
 
 function fillTable(id, rows) {
   const tb = document.querySelector("#" + id + " tbody");
   if (!tb) return;
-  // Build rows as DOM nodes so untrusted host data (process names, mount
-  // points, interface names) can never inject HTML.
   tb.replaceChildren();
   for (const r of rows) {
     const tr = document.createElement("tr");
@@ -241,18 +265,16 @@ function push(ch, [label, vals]) {
   ch.update("none");
 }
 
-// 改名:点击标题旁的铅笔,弹窗输入新名字
-// 绑定详情页的改名按钮
+// ---------- 改名 ----------
 function bindRename(id) {
   const btn = document.getElementById("renameBtn");
   if (!btn) return;
   btn.onclick = (e) => { e.preventDefault(); renameAgent(id); };
 }
-// 通用改名逻辑(卡片和详情页共用),改完自动刷新当前视图
 async function renameAgent(id) {
   const cur = states[id] && states[id].name ? states[id].name : "";
   const name = prompt("修改主机名称:", cur);
-  if (name === null) return; // 取消
+  if (name === null) return;
   const trimmed = name.trim();
   if (!trimmed) { alert("名称不能为空"); return; }
   try {
@@ -266,12 +288,8 @@ async function renameAgent(id) {
       if (selected === id) {
         const h1 = document.getElementById("titleName");
         if (h1) h1.textContent = trimmed;
-      } else {
-        renderList(); // 卡片列表刷新名字
-      }
-    } else {
-      alert("改名失败: " + r.status);
-    }
+      } else { renderList(); }
+    } else { alert("改名失败: " + r.status); }
   } catch (e) { alert("网络错误"); }
 }
 
@@ -294,7 +312,6 @@ async function loadHistory(id) {
     c.cpu.update("none"); c.net.update("none");
   } catch (e) {}
 }
-
 
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));

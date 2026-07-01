@@ -8,15 +8,37 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
-	"strings"
 
 	"github.com/gorilla/websocket"
 )
 
+// upgrader checks the Origin header to prevent Cross-Site WebSocket Hijacking.
+// In production the dashboard should sit behind a reverse proxy that sets
+// the correct Host header; we accept same-origin and explicit proxy origins.
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: checkOrigin,
+}
+
+func checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true // non-browser clients (curl, agent) have no Origin
+	}
+	host := r.Host
+	// allow same-origin: Origin's host must match the request Host
+	if strings.Contains(origin, "://"+host) || strings.HasSuffix(origin, host) {
+		return true
+	}
+	// fall back to allowing localhost dev origins
+	for _, h := range []string{"localhost", "127.0.0.1", "0.0.0.0"} {
+		if strings.Contains(origin, "://"+h) {
+			return true
+		}
+	}
+	return false
 }
 
 // Server wires the hub, store, and HTTP routes together.
@@ -26,16 +48,25 @@ type Server struct {
 	mux      *http.ServeMux
 	webToken string
 
-	sessMu  sync.Mutex
+	sessMu   sync.Mutex
 	sessions map[string]time.Time // token -> expiry
+
+	loginMu    sync.Mutex
+	loginFails map[string]*loginBucket // ip -> rate-limit state
+}
+
+type loginBucket struct {
+	fails    int
+	lastFail time.Time
 }
 
 // NewServer builds a Server backed by the given store/hub.
-// `webToken` gates the browser surface (REST + viewer WS + UI). Empty means
-// no gating (e.g. when behind a reverse proxy that handles auth). The
-// agent endpoint /agent is always gated by the hub's own secret.
 func NewServer(store *Store, hub *Hub, webToken string) *Server {
-	s := &Server{hub: hub, store: store, mux: http.NewServeMux(), webToken: webToken, sessions: make(map[string]time.Time)}
+	s := &Server{
+		hub: hub, store: store, mux: http.NewServeMux(),
+		webToken: webToken, sessions: make(map[string]time.Time),
+		loginFails: make(map[string]*loginBucket),
+	}
 	s.routes()
 	return s
 }
@@ -46,29 +77,18 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/servers", s.gateWeb(s.handleServers))
 	s.mux.HandleFunc("/api/servers/", s.gateWeb(s.handleServerDetail))
 }
-// LoginPageHandler returns the /login HTML page (always open; it checks
-// for an existing session and bounces to "/" if already logged in).
+
 func (s *Server) LoginPageHandler() http.HandlerFunc { return s.handleLoginPage }
+func (s *Server) LoginHandler() http.HandlerFunc     { return s.handleAPILogin }
+func (s *Server) LogoutHandler() http.HandlerFunc    { return s.handleAPILogout }
 
-// LoginHandler validates the password and sets a session cookie.
-func (s *Server) LoginHandler() http.HandlerFunc { return s.handleAPILogin }
-
-// LogoutHandler clears the session cookie.
-func (s *Server) LogoutHandler() http.HandlerFunc { return s.handleAPILogout }
-
-// GateStatic wraps an arbitrary handler (e.g. the static file server) with
-// the same browser auth used for the API: a valid session cookie lets the
-// request through, otherwise it redirects to /login. When no webToken is
-// configured it is a no-op pass-through.
+// GateStatic wraps the static file server with browser auth.
 func (s *Server) GateStatic(h http.Handler) http.Handler {
 	if s.webToken == "" {
 		return h
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.authorized(r, []byte(s.webToken)) {
-			// If the user authenticated via ?token= query param (e.g. clicking
-			// the access link), establish a session cookie so subsequent
-			// requests for app.js / style.css / ws are authenticated too.
 			if c, err := r.Cookie("probe_session"); err != nil || !s.validSession(c.Value) {
 				if t := r.URL.Query().Get("token"); t != "" && subtle.ConstantTimeCompare([]byte(t), []byte(s.webToken)) == 1 {
 					http.SetCookie(w, &http.Cookie{
@@ -85,9 +105,6 @@ func (s *Server) GateStatic(h http.Handler) http.Handler {
 	})
 }
 
-// gateWeb wraps a handler with the browser access token when configured.
-// Accepts a valid session cookie, or a ?token=<token> query param (for the
-// WS path from a freshly-logged-in page), or an Authorization: Bearer header.
 func (s *Server) gateWeb(next http.HandlerFunc) http.HandlerFunc {
 	if s.webToken == "" {
 		return next
@@ -98,7 +115,6 @@ func (s *Server) gateWeb(next http.HandlerFunc) http.HandlerFunc {
 			next(w, r)
 			return
 		}
-		// Browser navigations: redirect to login instead of returning 401.
 		if r.Header.Get("Authorization") == "" && r.URL.Query().Get("token") == "" {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
@@ -107,19 +123,15 @@ func (s *Server) gateWeb(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// authorized checks session cookie / bearer / query token.
 func (s *Server) authorized(r *http.Request, want []byte) bool {
-	// 1. session cookie
 	if c, err := r.Cookie("probe_session"); err == nil && s.validSession(c.Value) {
 		return true
 	}
-	// 2. bearer header
 	cand := r.Header.Get("Authorization")
 	const pfx = "Bearer "
 	if len(cand) >= len(pfx) && cand[:len(pfx)] == pfx {
 		return subtle.ConstantTimeCompare([]byte(cand[len(pfx):]), want) == 1
 	}
-	// 3. query token (for WS handshake before cookie is set, or direct API use)
 	if t := r.URL.Query().Get("token"); t != "" {
 		return subtle.ConstantTimeCompare([]byte(t), want) == 1
 	}
@@ -132,6 +144,13 @@ func (s *Server) newSession() string {
 	id := hex.EncodeToString(b)
 	s.sessMu.Lock()
 	s.sessions[id] = time.Now().Add(7 * 24 * time.Hour)
+	// GC expired sessions opportunistically
+	now := time.Now()
+	for k, exp := range s.sessions {
+		if now.After(exp) {
+			delete(s.sessions, k)
+		}
+	}
 	s.sessMu.Unlock()
 	return id
 }
@@ -156,9 +175,58 @@ func (s *Server) dropSession(id string) {
 	s.sessMu.Unlock()
 }
 
-// handleLoginPage serves the login form (HTML).
+// loginRateLimit returns false if the IP has exceeded the fail threshold.
+const (
+	maxLoginFails = 10
+	loginBanTime  = 5 * time.Minute
+)
+
+func (s *Server) loginRateLimit(ip string) bool {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
+	b, ok := s.loginFails[ip]
+	if !ok {
+		b = &loginBucket{}
+		s.loginFails[ip] = b
+	}
+	// reset counter if the ban window expired
+	if b.fails >= maxLoginFails && time.Since(b.lastFail) > loginBanTime {
+		b.fails = 0
+	}
+	return b.fails < maxLoginFails
+}
+
+func (s *Server) recordLoginFail(ip string) {
+	s.loginMu.Lock()
+	defer s.loginMu.Unlock()
+	b, ok := s.loginFails[ip]
+	if !ok {
+		b = &loginBucket{}
+		s.loginFails[ip] = b
+	}
+	b.fails++
+	b.lastFail = time.Now()
+}
+
+func (s *Server) recordLoginOK(ip string) {
+	s.loginMu.Lock()
+	delete(s.loginFails, ip)
+	s.loginMu.Unlock()
+}
+
+func clientIP(r *http.Request) string {
+	// respect X-Forwarded-For from a trusted reverse proxy
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		return strings.TrimSpace(strings.Split(xff, ",")[0])
+	}
+	host := r.RemoteAddr
+	if i := strings.LastIndex(host, ":"); i > 0 {
+		host = host[:i]
+	}
+	return host
+}
+
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
-	// Already logged in -> bounce to app.
 	if c, err := r.Cookie("probe_session"); err == nil && s.validSession(c.Value) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
@@ -168,8 +236,12 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(loginHTML))
 }
 
-// handleAPILogin validates the password, sets a session cookie.
 func (s *Server) handleAPILogin(w http.ResponseWriter, r *http.Request) {
+	ip := clientIP(r)
+	if !s.loginRateLimit(ip) {
+		http.Error(w, "尝试过于频繁,请稍后再试", http.StatusTooManyRequests)
+		return
+	}
 	want := []byte(s.webToken)
 	got := ""
 	if r.Header.Get("Content-Type") == "application/json" {
@@ -181,23 +253,21 @@ func (s *Server) handleAPILogin(w http.ResponseWriter, r *http.Request) {
 		got = r.FormValue("password")
 	}
 	if subtle.ConstantTimeCompare([]byte(got), want) != 1 {
+		s.recordLoginFail(ip)
+		w.Header().Set("Retry-After", "300")
 		http.Error(w, "密码错误", http.StatusUnauthorized)
 		return
 	}
+	s.recordLoginOK(ip)
 	sid := s.newSession()
 	http.SetCookie(w, &http.Cookie{
-		Name:     "probe_session",
-		Value:    sid,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   7 * 24 * 3600,
-		Secure:   r.TLS != nil,
+		Name: "probe_session", Value: sid, Path: "/",
+		HttpOnly: true, SameSite: http.SameSiteStrictMode,
+		MaxAge: 7 * 24 * 3600, Secure: r.TLS != nil,
 	})
 	writeJSON(w, map[string]any{"ok": true})
 }
 
-// handleAPILogout clears the session cookie.
 func (s *Server) handleAPILogout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie("probe_session"); err == nil {
 		s.dropSession(c.Value)
@@ -267,11 +337,11 @@ func (s *Server) handleServers(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /api/servers/{id} -> latest full state
-// GET /api/servers/{id}/history?minutes=60 -> chart samples
+// GET /api/servers/{id}/history?minutes=60
+// POST /api/servers/{id}/rename
 func (s *Server) handleServerDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Path[len("/api/servers/"):]
 	detailID, rest := splitFirst(id, "/")
-	// POST /api/servers/{id}/rename  {"name":"新名称"}
 	if rest == "rename" && r.Method == http.MethodPost {
 		var body struct{ Name string `json:"name"` }
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Name) == "" {
@@ -287,7 +357,7 @@ func (s *Server) handleServerDetail(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "rename failed", http.StatusInternalServerError)
 			return
 		}
-		s.hub.applyRename(detailID, name) // refresh in-memory cache immediately
+		s.hub.applyRename(detailID, name)
 		writeJSON(w, map[string]any{"ok": true, "name": name})
 		return
 	}
@@ -309,10 +379,8 @@ func (s *Server) handleServerDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 func splitFirst(s, sep string) (a, b string) {
-	for i := 0; i+len(sep) <= len(s); i++ {
-		if s[i:i+len(sep)] == sep {
-			return s[:i], s[i+len(sep):]
-		}
+	if i := strings.Index(s, sep); i >= 0 {
+		return s[:i], s[i+len(sep):]
 	}
 	return s, ""
 }
@@ -323,13 +391,8 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// AgentHandler returns the websocket endpoint for agents.
-func (s *Server) AgentHandler() http.HandlerFunc { return s.handleAgentWS }
-
-// ViewerHandler returns the websocket endpoint for browsers.
+func (s *Server) AgentHandler() http.HandlerFunc  { return s.handleAgentWS }
 func (s *Server) ViewerHandler() http.HandlerFunc { return s.gateWeb(s.handleViewerWS) }
-
-// APIHandler returns the REST API handler (matches /api/*).
 func (s *Server) APIHandler() http.HandlerFunc {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/servers" {
@@ -340,7 +403,6 @@ func (s *Server) APIHandler() http.HandlerFunc {
 			s.handleServerDetail(w, r)
 			return
 		}
-		// login/logout 不经 gateWeb,已在路由里单独注册
 		http.NotFound(w, r)
 	})
 	return s.gateWeb(inner)

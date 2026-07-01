@@ -105,6 +105,9 @@ func (h *Hub) HandleAgent(ws *websocket.Conn) {
 
 	// Reader loop: the only message type we act on is state.
 	for {
+		// Reset a generous read deadline each iteration; the agent sends
+		// state every few seconds, so 5 minutes of silence means it's dead.
+		_ = ws.SetReadDeadline(time.Now().Add(5 * time.Minute))
 		var msg proto.Message
 		if err := readMsg(ws, &msg); err != nil {
 			log.Printf("agent %s read: %v", ac.id, err)
@@ -160,6 +163,7 @@ func (h *Hub) HandleViewer(ws *websocket.Conn) {
 
 	// Keep reading only to detect disconnects; the browser sends nothing.
 	for {
+		_ = ws.SetReadDeadline(time.Now().Add(2 * time.Minute))
 		if _, _, err := ws.ReadMessage(); err != nil {
 			return
 		}

@@ -7,6 +7,9 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
+	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -39,7 +42,7 @@ type Client struct {
 // NewClient builds an agent runtime (does not connect yet).
 func NewClient(cfg Config) *Client {
 	if cfg.AgentID == "" {
-		cfg.AgentID = uuid.NewString()
+		cfg.AgentID = loadOrCreateID()
 	}
 	if cfg.Interval <= 0 {
 		cfg.Interval = 3 * time.Second
@@ -159,4 +162,33 @@ func readJSON(c *websocket.Conn, m *proto.Message) error {
 		return err
 	}
 	return json.Unmarshal(b, m)
+}
+
+// loadOrCreateID persists a stable agent ID next to the binary so it survives
+// restarts. Without this every reconnect creates a ghost entry on the
+// dashboard and breaks the rename / history linkage.
+func loadOrCreateID() string {
+	for _, dir := range []string{
+		os.Getenv("PROBE_DATA_DIR"),
+		filepath.Dir(os.Args[0]),
+		".",
+		"/var/lib/probe-agent",
+		"/opt/probe-agent",
+	} {
+		if dir == "" {
+			continue
+		}
+		p := filepath.Join(dir, "agent.id")
+		if b, err := os.ReadFile(p); err == nil {
+			id := strings.TrimSpace(string(b))
+			if len(id) >= 8 {
+				return id
+			}
+		}
+		// try to create it here
+		if id := uuid.NewString(); os.WriteFile(p, []byte(id), 0600) == nil {
+			return id
+		}
+	}
+	return uuid.NewString()
 }
