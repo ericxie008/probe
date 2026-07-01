@@ -25,21 +25,20 @@ R() { printf '\033[31m%s\033[0m\n' "$1"; }
 # Go: 始终从官方安装新版,不依赖系统包管理器(Debian/Ubuntu 的版本太旧)
 # --------------------------------------------------------------------
 ensure_go() {
-  local need=21
-  # 已经有 go?
+  # 已经有 go 且版本 >= 1.21?
   if command -v go >/dev/null 2>&1; then
-    local have
-    have=$(go version 2>/dev/null | grep -oE 'go[0-9]+\.[0-9]+' | head -1 | tr -d 'go')
-    if [[ -n "$have" ]]; then
-      local major="${have%%.*}" minor="${have#*.}"
-      if (( major > need )) || (( major == need )); then
-        G "Go $(go version | awk '{print $3}') 满足要求"
-        return 0
-      fi
+    local gover
+    gover=$(go version 2>/dev/null | grep -oE 'go[0-9]+\.[0-9]+' | head -1 | sed 's/go//')
+    local major="${gover%%.*}" minor="${gver#*.}"
+    # Go 版本号是 1.xx 格式,比较 major.minor * 100 转成整数
+    local ver_num=$(( major * 100 + minor ))
+    if (( ver_num >= 121 )); then
+      G "Go $(go version | awk '{print $3}') 满足要求"
+      return 0
     fi
-    Y "系统 Go 版本太旧($(go version | awk '{print $3}')),需要 1.${need}+"
+    Y "系统 Go 版本太旧 ($(go version | awk '{print $3}')),需要 1.21+,正在下载新版..."
   else
-    Y "未检测到 Go"
+    Y "未检测到 Go,正在下载..."
   fi
 
   # 确定架构

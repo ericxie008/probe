@@ -27,17 +27,17 @@ INSECURE_FLAG="${INSECURE:-0}"
 # Go: 从官方安装,不依赖系统包管理器
 # --------------------------------------------------------------------
 ensure_go() {
-  local need=21
   if command -v go >/dev/null 2>&1; then
-    local have
-    have=$(go version 2>/dev/null | grep -oE 'go[0-9]+\.[0-9]+' | head -1 | tr -d 'go')
-    if [[ -n "$have" ]]; then
-      local major="${have%%.*}" minor="${have#*.}"
-      if (( major > need )) || (( major == need )); then
+    local gver
+    gver=$(go version 2>/dev/null | grep -oE 'go[0-9]+\.[0-9]+' | head -1 | sed 's/go//')
+    if [[ -n "$gver" ]]; then
+      local major="${gver%%.*}" minor="${gver#*.}"
+      local ver_num=$(( major * 100 + minor ))
+      if (( ver_num >= 121 )); then
         return 0
       fi
     fi
-    Y "系统 Go 版本太旧,需要 1.${need}+"
+    Y "系统 Go 版本太旧,需要 1.21+"
   fi
   local arch
   arch=$(uname -m)
