@@ -345,14 +345,23 @@ async function showDeploy() {
       deploySecret = d.secret || "";
     } catch (e) { alert("获取部署信息失败"); return; }
   }
-  const host = location.host; // 含端口,如 us.xxx:8553
+  const host = location.host;
   const hostname = host.split(":")[0];
   const isTLS = location.protocol === "https:";
   const tlsFlag = isTLS ? " -tls" : "";
   const insecureFlag = isTLS ? " -insecure" : "";
 
-  const installCmd = `# 一键安装 Agent(Linux)\n` +
-    `git clone https://github.com/ericxie008/probe.git probe && cd probe\n` +
+  // GitHub token(私有仓库需要),存在 localStorage 避免重复输入
+  let ghToken = localStorage.getItem("gh_token") || "";
+  // clone 命令:有 token 就带认证,没有就提示填写
+  const ghUser = "ericxie008";
+  const cloneUrl = ghToken
+    ? `https://${ghUser}:${ghToken}@github.com/${ghUser}/probe.git`
+    : `https://github.com/${ghUser}/probe.git`;
+  const tokenHint = ghToken ? "" : " (上方填写 Token 后点刷新)";
+
+  const installCmd = `# 一键安装 Agent(Linux)${tokenHint}\n` +
+    `git clone ${cloneUrl} probe && cd probe\n` +
     `sudo SERVER=${host} TOKEN=${deploySecret} TLS=1${isTLS ? " INSECURE=1" : ""} NAME=主机名 ./scripts/install-agent.sh`;
 
   const upgradeCmd = `# 升级 Agent(重新编译 + 重启)\n` +
@@ -363,8 +372,9 @@ async function showDeploy() {
 
   const manualCmd = `# 手动运行 Agent(不用脚本)\n` +
     `./agent -server ${host} -token ${deploySecret} -name "主机名"${tlsFlag}${insecureFlag}`;
-  const dashInstallCmd = `# 一键安装 Dashboard(服务端)\n` +
-    `git clone https://github.com/ericxie008/probe.git probe && cd probe\n` +
+
+  const dashInstallCmd = `# 一键安装 Dashboard(服务端)${tokenHint}\n` +
+    `git clone ${cloneUrl} probe && cd probe\n` +
     `sudo CERT="你的证书路径" KEY="你的私钥路径" ./scripts/install-dashboard.sh\n` +
     `# 无已有证书用域名自动申请:\n` +
     `# sudo DOMAIN=${hostname} ./scripts/install-dashboard.sh`;
@@ -376,12 +386,26 @@ async function showDeploy() {
     `cp -r web /opt/probe/\n` +
     `systemctl restart probe-dashboard`;
 
+  const hostname2 = hostname; // 已在上方定义
+  deployCmds = { dashInstall: dashInstallCmd, dashUpgrade: dashUpgradeCmd, install: installCmd, upgrade: upgradeCmd, manual: manualCmd };
+
   // 构建模态框
   const modal = document.createElement("div");
   modal.className = "modal-overlay";
   modal.id = "deployModal";
   modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
-  deployCmds = { dashInstall: dashInstallCmd, dashUpgrade: dashUpgradeCmd, install: installCmd, upgrade: upgradeCmd, manual: manualCmd };
+  modal.innerHTML = `
+    <div class="modal">
+      <div class="modal-head">
+        <h2>部署与升级</h2>
+        <button class="modal-close" onclick="document.getElementById('deployModal').remove()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="cmd-section token-input-row">
+          <span class="token-label">GitHub Token</span>
+          <input type="password" id="ghTokenInput" class="token-input" placeholder="私有仓库需要填,公开仓库留空" value="${ghToken}">
+          <button class="copy-btn" onclick="saveGhToken()">保存</button>
+        </div>
   modal.innerHTML = `
     <div class="modal">
       <div class="modal-head">
@@ -420,6 +444,13 @@ async function showDeploy() {
   document.getElementById("cmdInstall").textContent = installCmd;
   document.getElementById("cmdUpgrade").textContent = upgradeCmd;
   document.getElementById("cmdManual").textContent = manualCmd;
+}
+
+function saveGhToken() {
+  const v = document.getElementById("ghTokenInput").value.trim();
+  localStorage.setItem("gh_token", v);
+  document.getElementById("deployModal").remove();
+  showDeploy(); // 重新生成命令
 }
 
 function copyCmd(btn, key) {

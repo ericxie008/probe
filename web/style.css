@@ -299,3 +299,18 @@ table tbody tr:hover { background: rgba(255,255,255,0.02); }
   padding-bottom: 6px; border-bottom: 1px solid var(--border);
 }
 .cmd-group-title:first-child { margin-top: 0; }
+
+/* GitHub token input */
+.token-input-row {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 16px; padding: 10px 12px;
+  background: rgba(59,130,246,0.05); border: 1px solid rgba(59,130,246,0.15);
+  border-radius: 8px;
+}
+.token-label { font-size: 12px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+.token-input {
+  flex: 1; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 5px; padding: 6px 10px; color: var(--text);
+  font-size: 12px; font-family: monospace; outline: none;
+}
+.token-input:focus { border-color: var(--accent); }
