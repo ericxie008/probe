@@ -340,13 +340,18 @@ async function loadHistory(id) {
 let deploySecret = "";
 let deployCmds = {};
 async function showDeploy() {
-  // 拉取部署信息(只需一次)
+  // 密钥从管理员本地输入获取(不通过 API 传输,防泄露)
+  if (!deploySecret) {
+    deploySecret = localStorage.getItem("deploy_secret") || "";
+  }
+  // 如果没存过,从 API 拿打码版本用于显示提示
+  let maskedSecret = "";
   if (!deploySecret) {
     try {
       const r = await fetch("/api/deploy");
       const d = await r.json();
-      deploySecret = d.secret || "";
-    } catch (e) { alert("获取部署信息失败"); return; }
+      maskedSecret = d.secret_masked || "";
+    } catch (e) {}
   }
   const host = location.host;
   const hostname = host.split(":")[0];
@@ -358,7 +363,7 @@ async function showDeploy() {
 
   const installCmd = `# 一键安装 Agent(Linux)\n` +
     `git clone ${cloneUrl} probe && cd probe\n` +
-    `sudo SERVER=${host} TOKEN=${deploySecret} TLS=1${isTLS ? " INSECURE=1" : ""} NAME=主机名 ./scripts/install-agent.sh`;
+    `sudo SERVER=${host} TOKEN=${deploySecret || "<填入密钥: " + maskedSecret + ">"} TLS=1${isTLS ? " INSECURE=1" : ""} NAME=主机名 ./scripts/install-agent.sh`;
 
   const upgradeCmd = `# 升级 Agent(重新编译 + 重启)\n` +
     `cd ~/probe && git pull\n` +
@@ -367,7 +372,7 @@ async function showDeploy() {
     `systemctl restart probe-agent`;
 
   const manualCmd = `# 手动运行 Agent(不用脚本)\n` +
-    `./agent -server ${host} -token ${deploySecret} -name "主机名"${tlsFlag}${insecureFlag}`;
+    `./agent -server ${host} -token ${deploySecret || "<填入密钥>"} -name "主机名"${tlsFlag}${insecureFlag}`;
 
   const dashInstallCmd = `# 一键安装 Dashboard(服务端)\n` +
     `git clone ${cloneUrl} probe && cd probe\n` +
@@ -396,6 +401,11 @@ async function showDeploy() {
         <button class="modal-close" onclick="document.getElementById('deployModal').remove()">✕</button>
       </div>
       <div class="modal-body">
+        <div class="cmd-section token-input-row">
+          <span class="token-label">Agent 密钥</span>
+          <input type="text" id="secretInput" class="token-input" placeholder="${maskedSecret ? "已设置(" + maskedSecret + "),重新输入可覆盖" : "输入 Agent 密钥"}" value="${deploySecret}">
+          <button class="copy-btn" onclick="saveSecret()">保存</button>
+        </div>
         <div class="cmd-group-title">Dashboard(服务端)</div>
         <div class="cmd-section">
           <div class="cmd-title"><span>安装 Dashboard</span><button class="copy-btn" onclick="copyCmd(this, 'dashInstall')">复制</button></div>
@@ -427,6 +437,14 @@ async function showDeploy() {
   document.getElementById("cmdInstall").textContent = installCmd;
   document.getElementById("cmdUpgrade").textContent = upgradeCmd;
   document.getElementById("cmdManual").textContent = manualCmd;
+}
+
+function saveSecret() {
+  const v = document.getElementById("secretInput").value.trim();
+  deploySecret = v;
+  localStorage.setItem("deploy_secret", v);
+  document.getElementById("deployModal").remove();
+  showDeploy();
 }
 
 function copyCmd(btn, key) {

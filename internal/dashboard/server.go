@@ -248,6 +248,7 @@ func (s *Server) handleAPILogin(w http.ResponseWriter, r *http.Request) {
 	}
 	want := []byte(s.webToken)
 	got := ""
+	r.Body = http.MaxBytesReader(w, r.Body, 1024)
 	if r.Header.Get("Content-Type") == "application/json" {
 		var body struct{ Password string `json:"password"` }
 		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
@@ -300,8 +301,14 @@ func (s *Server) handleViewerWS(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/deploy -> returns connection info for generating agent install commands.
 func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
+	// 不返回明文 secret,只返回打码版本用于确认;完整命令在前端拼接时用 **** 占位,
+	// 实际密钥由管理员从部署时记录的信息中填入。
+	masked := s.secret
+	if len(masked) > 8 {
+		masked = masked[:4] + "****" + masked[len(masked)-4:]
+	}
 	writeJSON(w, map[string]any{
-		"secret": s.secret,
+		"secret_masked": masked,
 	})
 }
 
@@ -364,6 +371,7 @@ func (s *Server) handleServerDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct{ Name string `json:"name"` }
+		r.Body = http.MaxBytesReader(w, r.Body, 4096)
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Name) == "" {
 			http.Error(w, "name required", http.StatusBadRequest)
 			return

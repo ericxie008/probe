@@ -53,6 +53,7 @@ func NewHub(store *Store, secret string) *Hub {
 func (h *Hub) HandleAgent(ws *websocket.Conn) {
 	// Require authentication within a short window so an unauthenticated
 	// peer cannot hold a connection open indefinitely.
+	ws.SetReadLimit(512 * 1024) // 512KB max per message
 	_ = ws.SetReadDeadline(time.Now().Add(10 * time.Second))
 
 	// First frame must be auth.
@@ -131,6 +132,7 @@ func (h *Hub) reject(ws *websocket.Conn) {
 // HandleViewer registers a browser websocket and streams live states to it.
 // The browser never sends anything back; this is a push-only channel.
 func (h *Hub) HandleViewer(ws *websocket.Conn) {
+	ws.SetReadLimit(4096) // viewers only send tiny keepalive
 	vc := &viewerConn{ws: ws, send: make(chan []byte, 64)}
 	h.mu.Lock()
 	h.viewers[vc] = struct{}{}
