@@ -406,13 +406,6 @@ async function showDeploy() {
           <input type="password" id="ghTokenInput" class="token-input" placeholder="私有仓库需要填,公开仓库留空" value="${ghToken}">
           <button class="copy-btn" onclick="saveGhToken()">保存</button>
         </div>
-  modal.innerHTML = `
-    <div class="modal">
-      <div class="modal-head">
-        <h2>部署与升级</h2>
-        <button class="modal-close" onclick="document.getElementById('deployModal').remove()">✕</button>
-      </div>
-      <div class="modal-body">
         <div class="cmd-group-title">Dashboard(服务端)</div>
         <div class="cmd-section">
           <div class="cmd-title"><span>安装 Dashboard</span><button class="copy-btn" onclick="copyCmd(this, 'dashInstall')">复制</button></div>
