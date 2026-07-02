@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
+	"strings"
 	"syscall"
 	"time"
 
@@ -106,6 +108,18 @@ func displayHost(addr string) string {
 
 func safeStatic(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Reject path traversal attempts explicitly. Go's http.FileServer
+		// already cleans paths internally, but this adds a second layer
+		// for defence-in-depth (e.g. behind proxies that decode %2e).
+		cleaned := path.Clean(r.URL.Path)
+		if cleaned != r.URL.Path && cleaned != r.URL.Path+"/" {
+			// path.Clean normalises "a/../b" to "b"; if the result differs
+			// it means the original had traversable segments.
+			if strings.Contains(r.URL.Path, "..") {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")

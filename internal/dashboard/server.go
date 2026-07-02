@@ -382,6 +382,13 @@ func (s *Server) handleServers(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleServerDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Path[len("/api/servers/"):]
 	detailID, rest := splitFirst(id, "/")
+	// Reject IDs containing path separators or traversal sequences.
+	// detailID is used as a map key / SQL parameter (no injection risk),
+	// but rejecting malformed IDs early is good hygiene.
+	if strings.ContainsAny(detailID, "/\\") || strings.Contains(detailID, "..") {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
 
 	// POST /api/servers/{id}/delete
 	if rest == "delete" && r.Method == http.MethodPost {
