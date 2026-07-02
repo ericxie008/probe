@@ -1,20 +1,20 @@
 :root {
-  --bg: #2b2d31;
-  --bg-grad: radial-gradient(ellipse 90% 50% at 50% -10%, #353839 0%, transparent 70%);
-  --panel: #383a40;
-  --panel-hover: #404249;
-  --border: #474a52;
-  --border-hover: #5a5e68;
-  --text: #e8e8e8;
-  --muted: #9a9a9a;
-  --accent: #6195ff;
-  --accent-soft: rgba(97, 149, 255, 0.12);
+  --bg: #0f1c3c;
+  --bg-grad: radial-gradient(ellipse 90% 50% at 50% -10%, #1a3060 0%, transparent 70%);
+  --panel: rgba(25, 45, 80, 0.65);
+  --panel-hover: rgba(30, 55, 95, 0.75);
+  --border: #254b87;
+  --border-hover: #3a6bb5;
+  --text: #f0f7ff;
+  --muted: #94b3d8;
+  --accent: #4d8ff0;
+  --accent-soft: rgba(77, 143, 240, 0.15);
   --green: #34d399;
   --yellow: #fbbf24;
   --red: #f87171;
   --purple: #c084fc;
   --radius: 10px;
-  --shadow: 0 1px 4px rgba(0,0,0,0.3);
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 * { box-sizing: border-box; }
 body {
@@ -39,7 +39,7 @@ header {
   justify-content: space-between;
   padding: 14px 28px;
   border-bottom: 1px solid var(--border);
-  background: rgba(43, 45, 49, 0.88);
+  background: rgba(15, 28, 60, 0.85);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   position: sticky;
@@ -82,7 +82,7 @@ main { padding: 24px 28px; max-width: 1600px; margin: 0 auto; }
   flex-wrap: wrap;
 }
 .sort-btn {
-  background: var(--panel-hover);
+  background: rgba(255,255,255,0.04);
   color: var(--muted);
   border: 1px solid var(--border);
   border-radius: 7px;
@@ -137,7 +137,7 @@ main { padding: 24px 28px; max-width: 1600px; margin: 0 auto; }
 .meters { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 16px; }
 .meter .label { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: .5px; }
 .meter .label b { color: var(--text); font-weight: 600; font-size: 12px; }
-.bar { height: 5px; background: var(--panel-hover); border-radius: 3px; overflow: hidden; }
+.bar { height: 5px; background: rgba(80, 130, 200, 0.15); border-radius: 3px; overflow: hidden; }
 .bar > i { display: block; height: 100%; border-radius: 3px; transition: width .5s cubic-bezier(.4,0,.2,1); }
 .bar > i.cpu { background: linear-gradient(90deg, #6195ff, #83b1ff); }
 .bar > i.mem { background: linear-gradient(90deg, #c084fc, #d8a8ff); }
@@ -212,7 +212,7 @@ table tbody tr:hover { background: var(--panel-hover); }
 
 /* ===== Edit buttons ===== */
 .edit-btn, .edit-btn-sm {
-  background: var(--panel-hover); color: var(--muted); border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04); color: var(--muted); border: 1px solid var(--border);
   border-radius: 6px; padding: 3px 8px; cursor: pointer; font-size: 13px;
   line-height: 1; transition: color .15s, border-color .15s, background .15s;
 }
@@ -240,7 +240,7 @@ table tbody tr:hover { background: var(--panel-hover); }
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .modal {
-  background: #383a40; border: 1px solid var(--border); border-radius: 14px;
+  background: rgba(20, 38, 68, 0.95); border: 1px solid var(--border); border-radius: 14px;
   width: 680px; max-width: 92vw; max-height: 86vh; overflow: hidden;
   box-shadow: 0 8px 32px rgba(0,0,0,0.4); display: flex; flex-direction: column;
 }
@@ -262,7 +262,7 @@ table tbody tr:hover { background: var(--panel-hover); }
 }
 .cmd-title span { font-size: 13px; font-weight: 600; color: var(--text); }
 .copy-btn {
-  background: var(--panel-hover); color: var(--muted);
+  background: rgba(255,255,255,0.04); color: var(--muted);
   border: 1px solid var(--border); border-radius: 5px;
   padding: 3px 10px; font-size: 11px; cursor: pointer;
   transition: all .15s;
@@ -271,7 +271,7 @@ table tbody tr:hover { background: var(--panel-hover); }
 .cmd-block {
   background: rgba(0,0,0,0.25); border: 1px solid var(--border); border-radius: 8px;
   padding: 12px 14px; margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px; line-height: 1.6; color: #a89e92; white-space: pre-wrap;
+  font-size: 12px; line-height: 1.6; color: #8fa8cc; white-space: pre-wrap;
   word-break: break-all; overflow-x: auto;
 }
 .cmd-group-title {
