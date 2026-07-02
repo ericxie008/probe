@@ -12,6 +12,13 @@ import (
 	"probe/internal/proto"
 )
 
+// stateMsg is a typed JSON wrapper for broadcasting state to browsers.
+// Using a struct avoids map[string]any reflection on every serialisation.
+type stateMsg struct {
+	Type string       `json:"type"`
+	Data *proto.State `json:"data"`
+}
+
 // Hub owns all agent connections and browser connections. Agents are
 // one-way (they only stream state upstream); browsers receive live
 // state pushes. There is no command/exec channel, by design.
@@ -156,7 +163,7 @@ func (h *Hub) HandleViewer(ws *websocket.Conn) {
 
 	// Send a snapshot of current states immediately on connect.
 	for _, st := range h.store.Latest() {
-		b, _ := json.Marshal(map[string]any{"type": "state", "data": st})
+		b, _ := json.Marshal(stateMsg{Type: "state", Data: st})
 		select {
 		case vc.send <- b:
 		default:
@@ -174,7 +181,7 @@ func (h *Hub) HandleViewer(ws *websocket.Conn) {
 
 // broadcast pushes a state to every connected browser.
 func (h *Hub) broadcast(st *proto.State) {
-	b, _ := json.Marshal(map[string]any{"type": "state", "data": st})
+	b, _ := json.Marshal(stateMsg{Type: "state", Data: st})
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for vc := range h.viewers {
@@ -184,6 +191,7 @@ func (h *Hub) broadcast(st *proto.State) {
 		}
 	}
 }
+
 // applyRename updates the cached state's name for an agent (so the next API
 // poll / list render uses the new name) and pushes a refresh to browsers.
 func (h *Hub) applyRename(id, name string) {

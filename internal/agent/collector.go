@@ -23,12 +23,20 @@ type Collector struct {
 	// prevNet holds the previous aggregate byte counters, used to compute
 	// instantaneous speed over the interval since the last Collect() call.
 	prevNetIn, prevNetOut uint64
-	prevTime              time.Time
 	cpuModel              string
 	cpuCount              int
 	prevProc              map[int32]procSample
 	prevProcTime          time.Time
 	prevNetSample         time.Time
+	prevCPUTimes          []cpu.TimesStat
+	tick                  int    // increments each Collect() call
+	cachedOS              string // semi-static host info
+	cachedUptime          uint64
+	cachedBootTime        uint64
+	cachedInterfaces      []proto.NetInterface
+	cachedDisks           []proto.DiskInfo
+	cachedDiskTotal       uint64
+	cachedDiskUsed        uint64
 }
 
 // procSample caches a process's accumulated CPU time and collection moment.
@@ -37,15 +45,16 @@ type procSample struct {
 	ts      time.Time
 }
 
-// procEntry pairs a process handle with its memory percent for sorting.
+// procEntry pairs a process handle with its memory percent and RSS.
 type procEntry struct {
-	p *process.Process
-	m float64
+	p   *process.Process
+	m   float64 // memory percent (for sorting)
+	rss uint64  // RSS in bytes (for the table)
 }
 
 // NewCollector returns a Collector primed with static host facts.
 func NewCollector() *Collector {
-	c := &Collector{prevTime: time.Now()}
+	c := &Collector{}
 	if infos, err := cpu.Info(); err == nil && len(infos) > 0 {
 		c.cpuModel = infos[0].ModelName
 	}
@@ -74,23 +83,41 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 	}
 
 	if hi, err := host.Info(); err == nil {
-		s.OS = hi.OS + " " + hi.Platform + " " + hi.PlatformVersion
 		s.Uptime = hi.Uptime
 		s.BootTime = hi.BootTime
+		if c.cachedOS == "" {
+			c.cachedOS = hi.OS + " " + hi.Platform + " " + hi.PlatformVersion
+		}
+		s.OS = c.cachedOS
 	}
 
 	if lv, err := load.Avg(); err == nil {
 		s.Load1, s.Load5, s.Load15 = lv.Load1, lv.Load5, lv.Load15
 	}
 
-	// 只采样一次(1秒阻塞),同时拿到总使用率和每核使用率,避免双倍阻塞。
-	if perCore, err := cpu.Percent(time.Second, true); err == nil && len(perCore) > 0 {
-		s.CPUPerCore = perCore
-		var sum float64
-		for _, v := range perCore {
-			sum += v
+	// CPU: non-blocking incremental sampling. cpu.Times() reads /proc/stat
+	// instantly; we compute percentages from the delta since the last
+	// sample instead of blocking for 1 second (which cpu.Percent does).
+	if cores, err := cpu.Times(true); err == nil && len(cores) > 0 {
+		if c.prevCPUTimes != nil && len(c.prevCPUTimes) == len(cores) {
+			perCore := make([]float64, len(cores))
+			var sum float64
+			for i, t := range cores {
+				prev := c.prevCPUTimes[i]
+				busy := t.User + t.System + t.Nice + t.Iowait + t.Irq +
+					t.Softirq + t.Steal + t.Guest + t.GuestNice
+				pBusy := prev.User + prev.System + prev.Nice + prev.Iowait + prev.Irq +
+					prev.Softirq + prev.Steal + prev.Guest + prev.GuestNice
+				total := t.Total() - prev.Total()
+				if total > 0 {
+					perCore[i] = (busy - pBusy) / total * 100
+				}
+				sum += perCore[i]
+			}
+			s.CPUPerCore = perCore
+			s.CPUUsage = sum / float64(len(cores))
 		}
-		s.CPUUsage = sum / float64(len(perCore))
+		c.prevCPUTimes = cores
 	}
 	s.CPUModel = c.cpuModel
 	s.CPUCount = c.cpuCount
@@ -125,34 +152,39 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 		s.SwapUsed = sm.Used
 	}
 
-	if parts, err := disk.Partitions(false); err == nil {
-		seen := make(map[string]struct{})
-		for _, p := range parts {
-			u, err := disk.Usage(p.Mountpoint)
-			if err != nil || u == nil {
-				continue
+	if c.tick%10 == 0 || c.cachedDisks == nil {
+		var disks []proto.DiskInfo
+		var diskTotal, diskUsed uint64
+		if parts, err := disk.Partitions(false); err == nil {
+			seen := make(map[string]struct{})
+			for _, p := range parts {
+				u, err := disk.Usage(p.Mountpoint)
+				if err != nil || u == nil {
+					continue
+				}
+				disks = append(disks, proto.DiskInfo{
+					Device: p.Device, Mountpoint: p.Mountpoint,
+					FSType: p.Fstype, Total: u.Total, Used: u.Used,
+				})
+				key := p.Device
+				if key == "" {
+					key = p.Mountpoint
+				}
+				if _, dup := seen[key]; dup {
+					continue
+				}
+				seen[key] = struct{}{}
+				diskTotal += u.Total
+				diskUsed += u.Used
 			}
-			s.Disks = append(s.Disks, proto.DiskInfo{
-				Device:     p.Device,
-				Mountpoint: p.Mountpoint,
-				FSType:     p.Fstype,
-				Total:      u.Total,
-				Used:       u.Used,
-			})
-			// Aggregate by unique device to avoid double-counting
-			// bind mounts / btrfs subvolumes / APFS containers.
-			key := p.Device
-			if key == "" {
-				key = p.Mountpoint
-			}
-			if _, dup := seen[key]; dup {
-				continue
-			}
-			seen[key] = struct{}{}
-			s.DiskTotal += u.Total
-			s.DiskUsed += u.Used
 		}
+		c.cachedDisks = disks
+		c.cachedDiskTotal = diskTotal
+		c.cachedDiskUsed = diskUsed
 	}
+	s.Disks = c.cachedDisks
+	s.DiskTotal = c.cachedDiskTotal
+	s.DiskUsed = c.cachedDiskUsed
 
 	netNow := time.Now()
 	if counters, err := net.IOCounters(false); err == nil && len(counters) > 0 {
@@ -174,41 +206,53 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 	}
 	c.prevNetIn, c.prevNetOut, c.prevNetSample = s.NetIn, s.NetOut, netNow
 
-	if ifaces, err := net.Interfaces(); err == nil {
-		for _, ifc := range ifaces {
-			if isVirtualIface(ifc.Name) {
-				continue
-			}
-			ni := proto.NetInterface{
-				Name: ifc.Name,
-				MAC:  ifc.HardwareAddr,
-			}
-			for _, a := range ifc.Addrs {
-				if isIPv6(a.Addr) {
-					if ni.IPv6 == "" {
-						ni.IPv6 = a.Addr
-					}
-				} else if ni.IPv4 == "" {
-					ni.IPv4 = a.Addr
+	if c.tick%10 == 0 || c.cachedInterfaces == nil {
+		var ifcs []proto.NetInterface
+		if ifaces, err := net.Interfaces(); err == nil {
+			for _, ifc := range ifaces {
+				if isVirtualIface(ifc.Name) {
+					continue
 				}
+				ni := proto.NetInterface{
+					Name: ifc.Name,
+					MAC:  ifc.HardwareAddr,
+				}
+				for _, a := range ifc.Addrs {
+					if isIPv6(a.Addr) {
+						if ni.IPv6 == "" {
+							ni.IPv6 = a.Addr
+						}
+					} else if ni.IPv4 == "" {
+						ni.IPv4 = a.Addr
+					}
+				}
+				ifcs = append(ifcs, ni)
 			}
-			s.Interfaces = append(s.Interfaces, ni)
 		}
+		c.cachedInterfaces = ifcs
 	}
+	s.Interfaces = c.cachedInterfaces
 
 	if procs, err := process.Processes(); err == nil {
-		// Sample every process's accumulated CPU time first so that
-		// delta-based instantaneous CPU% can be computed against the
-		// previous snapshot for ALL processes, not just the top-10 by
-		// memory. This is what makes the CPU% column actually move.
 		curProc := make(map[int32]procSample, len(procs))
 		entries := make([]procEntry, 0, len(procs))
+		var memTotal uint64
+		if vm, err := mem.VirtualMemory(); err == nil {
+			memTotal = vm.Total
+		}
 		for _, p := range procs {
-			m, err := p.MemoryPercent()
-			if err != nil || m <= 0 {
+			// One MemoryInfo() call gives us RSS directly. We compute
+			// the percent ourselves (RSS/total*100) to avoid a second
+			// syscall per process.
+			mi, err := p.MemoryInfo()
+			if err != nil || mi == nil || mi.RSS == 0 {
 				continue
 			}
-			entries = append(entries, procEntry{p, float64(m)})
+			var pct float64
+			if memTotal > 0 {
+				pct = float64(mi.RSS) / float64(memTotal) * 100
+			}
+			entries = append(entries, procEntry{p: p, m: pct, rss: mi.RSS})
 			if t, err := p.Times(); err == nil {
 				curProc[p.Pid] = procSample{cpuTime: t.Total(), ts: now}
 			}
@@ -226,11 +270,9 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 					cpuPct = (cur.cpuTime - prev.cpuTime) / dt * 100
 				}
 			}
-			pi := proto.ProcessInfo{PID: e.p.Pid, Name: nm, CPU: cpuPct}
-			if mem, _ := e.p.MemoryInfo(); mem != nil {
-				pi.Memory = mem.RSS
-			}
-			s.Processes = append(s.Processes, pi)
+			s.Processes = append(s.Processes, proto.ProcessInfo{
+				PID: e.p.Pid, Name: nm, CPU: cpuPct, Memory: e.rss,
+			})
 		}
 		c.prevProc = curProc
 		c.prevProcTime = now
@@ -244,6 +286,7 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 		}
 	}
 
+	c.tick++
 	s.Timestamp = now.Unix()
 	return s
 }

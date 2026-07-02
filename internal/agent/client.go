@@ -7,10 +7,10 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"strings"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,8 +26,8 @@ type Config struct {
 	Name     string // display name for this host
 	AgentID  string // stable id; generated if empty
 	Interval time.Duration
-	TLS      bool   // connect with wss:// (TLS) instead of ws://
-	Insecure bool   // skip TLS cert verification (self-signed / private net)
+	TLS      bool // connect with wss:// (TLS) instead of ws://
+	Insecure bool // skip TLS cert verification (self-signed / private net)
 }
 
 // Client is the agent: it connects to the dashboard, authenticates, and
@@ -153,6 +153,9 @@ func writeJSON(c *websocket.Conn, m proto.Message) error {
 	if err != nil {
 		return err
 	}
+	// Guard against a stalled network: if the write blocks longer than
+	// 5s the connection is effectively dead and should be recycled.
+	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	return c.WriteMessage(websocket.TextMessage, b)
 }
 
