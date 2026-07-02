@@ -60,13 +60,22 @@ func NewClient(cfg Config) *Client {
 // Run connects and streams metrics forever, reconnecting with backoff.
 func (c *Client) Run() {
 	backoff := time.Second
+	authFails := 0
+	const maxAuthRetries = 5
 	for {
 		err := c.runOnce()
 		if err != nil {
 			if errors.Is(err, errAuthFailed) {
-				log.Fatal("authentication failed, check token. exiting.")
+				authFails++
+				if authFails >= maxAuthRetries {
+					log.Fatalf("authentication failed %d times, check token. exiting.", authFails)
+				}
+				log.Printf("authentication rejected (%d/%d), will retry in %v: %v",
+					authFails, maxAuthRetries, backoff, err)
+			} else {
+				authFails = 0 // any non-auth error resets the auth-fail counter
+				log.Printf("agent disconnected: %v", err)
 			}
-			log.Printf("agent disconnected: %v", err)
 		}
 		time.Sleep(backoff)
 		if backoff < 60*time.Second {

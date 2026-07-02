@@ -200,8 +200,9 @@ func (h *Hub) applyRename(id, name string) {
 		st.name = name
 	}
 	h.mu.Unlock()
-	h.store.SetLatestName(id, name)
-	if st := h.store.LatestByID(id); st != nil {
+	// SetLatestNameCopy atomically renames and returns a shallow copy we
+	// can marshal without racing a concurrent UpdateState.
+	if st := h.store.SetLatestNameCopy(id, name); st != nil {
 		h.broadcast(st)
 	}
 }

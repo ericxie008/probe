@@ -129,10 +129,10 @@ func safeStatic(h http.Handler) http.Handler {
 func setSecurityHeaders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy",
 		"default-src 'self'; "+
-			"script-src 'self' https://cdn.jsdelivr.net; "+
+			"script-src 'self'; "+
 			"style-src 'self' 'unsafe-inline'; "+
 			"img-src 'self' data:; "+
-			"connect-src 'self' https://cdn.jsdelivr.net wss: ws:; "+
+			"connect-src 'self'; "+
 			"font-src 'self'; "+
 			"object-src 'none'; base-uri 'self'")
 	w.Header().Set("X-Content-Type-Options", "nosniff")

@@ -103,9 +103,10 @@ CREATE TABLE IF NOT EXISTS deleted_servers (
 );
 `
 
-// RememberAgent records a known agent id/name. If the same agent (by name)
-// reconnects with a new ID (e.g. after upgrade with a lost agent.id file),
-// the old record's history is migrated to the new ID and the old one deleted.
+// RememberAgent records a known agent id/name in the servers table. If the
+// agent reconnects with the same ID, the name is refreshed. Reconnection
+// under a different ID (e.g. lost agent.id file) creates a separate record;
+// history is NOT migrated — the old entry remains until admin-deleted.
 func (s *Store) RememberAgent(id, name string) {
 	// Ignore if this agent was admin-deleted
 	s.mu.RLock()
@@ -279,6 +280,21 @@ func (s *Store) SetLatestName(id, name string) {
 	}
 }
 
+// SetLatestNameCopy sets the name atomically and returns a shallow copy
+// of the resulting state. The caller can safely JSON-marshal the copy
+// without racing a concurrent UpdateState replacing the map entry.
+func (s *Store) SetLatestNameCopy(id, name string) *proto.State {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.latest[id]
+	if st == nil {
+		return nil
+	}
+	st.Name = name
+	cp := *st
+	return &cp
+}
+
 // LatestByID returns the cached state for one agent (or nil).
 func (s *Store) LatestByID(id string) *proto.State {
 	s.mu.RLock()
@@ -292,14 +308,17 @@ func (s *Store) Prune() {
 	_, _ = s.db.Exec(`DELETE FROM metrics WHERE ts < ?`, cutoff)
 }
 
-// staleAge is how old a cached state must be before it's reaped from
-// memory. States older than this mean the agent is offline and the
-// stale pointer would otherwise linger forever, slowly leaking memory.
-const staleAge = 2 * time.Minute
 
 // ReapStale removes in-memory latest states whose timestamp is older
-// than staleAge, freeing memory for agents that have gone offline.
-// Called alongside Prune() on the periodic ticker.
+// than staleAge (24h). We intentionally keep offline agents' last-known
+// state so they remain visible in the list with an "offline" badge
+// instead of vanishing. 24h is a safety cap: a genuinely decommissioned
+// agent that never reconnects is eventually forgotten from the hot
+// cache (its history in SQLite is pruned separately by Prune).
+const staleAge = 24 * time.Hour
+
+// ReapStale removes in-memory latest states whose timestamp is older
+// than staleAge. Called alongside Prune() on the periodic ticker.
 func (s *Store) ReapStale() {
 	cutoff := time.Now().Add(-staleAge).Unix()
 	s.mu.Lock()

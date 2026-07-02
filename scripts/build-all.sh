@@ -41,7 +41,7 @@ for p in "${PLATFORMS[@]}"; do
     export GOOS="$goos" GOARCH="$goarch"
     [[ -n "$goarm" ]] && export GOARM="$goarm" || unset GOARM
     export CGO_ENABLED=0
-    go build -trimpath -ldflags "-s -w -X main.version=$VERSION" \
+    go build -trimpath -ldflags "-s -w" \
       -o "$outname" "./cmd/$bin"
   done
 done

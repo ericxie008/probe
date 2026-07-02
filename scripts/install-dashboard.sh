@@ -13,7 +13,13 @@ set -euo pipefail
 INSTALL_DIR="/opt/probe"
 SERVICE_FILE="/etc/systemd/system/probe-dashboard.service"
 DATA_DIR="$INSTALL_DIR/data"
+ENV_FILE="/opt/probe/probe.env"
 GOVERSION="1.23.4"
+GOMIN="1.22"          # 与 go.mod 的 go 指令保持一致
+# 期望校验和(Go 官方发布的 SHA256,形如 64 字符 hex)
+# 留空则跳过校验(不推荐),填入官方公布的值即可启用完整性校验。
+GO_SHA256_AMD64=""
+GO_SHA256_ARM64=""
 
 G() { printf '\033[32m%s\033[0m\n' "$1"; }
 Y() { printf '\033[33m%s\033[0m\n' "$1"; }
@@ -30,13 +36,15 @@ ensure_go() {
     local gover
     gover=$(go version 2>/dev/null | grep -oE 'go[0-9]+\.[0-9]+' | head -1 | sed 's/go//')
     local major="${gover%%.*}" minor="${gover#*.}"
-    # Go 版本号是 1.xx 格式,比较 major.minor * 100 转成整数
-    local ver_num=$(( major * 100 + minor ))
-    if (( ver_num >= 121 )); then
+    # 比较当前版本是否 >= GOMIN(形如 "1.22")
+    local min_major="${GOMIN%%.*}" min_minor="${GOMIN#*.}"
+    local need=$(( min_major * 100 + min_minor ))
+    local have=$(( major * 100 + minor ))
+    if (( have >= need )); then
       G "Go $(go version | awk '{print $3}') 满足要求"
       return 0
     fi
-    Y "系统 Go 版本太旧 ($(go version | awk '{print $3}')),需要 1.21+,正在下载新版..."
+    Y "系统 Go 版本太旧 ($(go version | awk '{print $3}')),需要 ${GOMIN}+,正在下载新版..."
   else
     Y "未检测到 Go,正在下载..."
   fi
@@ -55,6 +63,25 @@ ensure_go() {
   curl -fsSL "https://go.dev/dl/go${GOVERSION}.linux-${arch}.tar.gz" -o go.tar.gz || {
     R "下载失败,请手动安装 Go 1.21+: https://go.dev/dl/"; exit 1
   }
+  # 完整性校验:若配置了对应架构的 SHA256,则验证后再解压
+  local expected_sha=""
+  case "$arch" in
+    amd64) expected_sha="$GO_SHA256_AMD64" ;;
+    arm64) expected_sha="$GO_SHA256_ARM64" ;;
+  esac
+  if [[ -n "$expected_sha" ]]; then
+    local got_sha
+    got_sha=$(sha256sum go.tar.gz | awk '{print $1}')
+    if [[ "${got_sha,,}" != "${expected_sha,,}" ]]; then
+      R "Go 下载包校验失败: 期望 ${expected_sha:0:16}…,实际 ${got_sha:0:16}…"
+      R "下载可能被篡改或镜像不同步,已中止。如确认无误可清空对应 GO_SHA256_* 变量后重试。"
+      rm -f go.tar.gz
+      exit 1
+    fi
+    G "Go 下载包 SHA256 校验通过"
+  else
+    Y "未配置 GO_SHA256_*,跳过完整性校验(建议从 https://go.dev/dl/ 填入官方校验和)"
+  fi
   rm -rf /usr/local/go
   tar -C /usr/local -xzf go.tar.gz
   rm -f go.tar.gz
@@ -122,6 +149,13 @@ fi
 # systemd
 # --------------------------------------------------------------------
 G "==> 配置 systemd 服务"
+# 凭据写入独立的 EnvironmentFile(权限 600),不写进 unit 文件,
+# 避免本机任何用户 cat /etc/systemd/system/*.service 即可读到密钥。
+cat > "$ENV_FILE" <<ENVEOF
+PROBE_SECRET=$SECRET
+PROBE_WEB_TOKEN=$WEB_TOKEN
+ENVEOF
+chmod 600 "$ENV_FILE"
 cat > "$SERVICE_FILE" <<UNITSVC
 [Unit]
 Description=Probe Server Monitor Dashboard
@@ -131,10 +165,9 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=$INSTALL_DIR
+EnvironmentFile=$ENV_FILE
 ExecStart=$INSTALL_DIR/dashboard \\
   -addr :$PORT \\
-  -secret "$SECRET" \\
-  -web-token "$WEB_TOKEN" \\
   -db $DATA_DIR/probe.db \\
   $TLS_ARGS
 Restart=always

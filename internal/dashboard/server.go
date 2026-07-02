@@ -128,20 +128,43 @@ func (s *Server) GateStatic(h http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.authorized(r, []byte(s.webToken)) {
-			if c, err := r.Cookie("probe_session"); err != nil || !s.validSession(c.Value) {
-				if t := r.URL.Query().Get("token"); t != "" && subtle.ConstantTimeCompare([]byte(t), []byte(s.webToken)) == 1 {
-					http.SetCookie(w, &http.Cookie{
-						Name: "probe_session", Value: s.newSession(), Path: "/",
-						HttpOnly: true, SameSite: http.SameSiteStrictMode,
-						MaxAge: 7 * 24 * 3600, Secure: r.TLS != nil,
-					})
+			if c, err := r.Cookie("probe_session"); err == nil && s.validSession(c.Value) {
+				// 已有有效 session,如果 URL 里还带着 token 就重定向去掉它,
+				// 避免 token 残留在浏览器历史/地址栏/Referer 中。
+				if t := r.URL.Query().Get("token"); t != "" {
+					redirectStripToken(w, r)
+					return
 				}
+				h.ServeHTTP(w, r)
+				return
 			}
-			h.ServeHTTP(w, r)
+			// 无有效 session,检查是否带了一次性 token;有效则换 cookie 后
+			// 重定向到不带 token 的 URL,避免 token 长期暴露。
+			if t := r.URL.Query().Get("token"); t != "" && subtle.ConstantTimeCompare([]byte(t), []byte(s.webToken)) == 1 {
+				http.SetCookie(w, &http.Cookie{
+					Name: "probe_session", Value: s.newSession(), Path: "/",
+					HttpOnly: true, SameSite: http.SameSiteStrictMode,
+					MaxAge: 7 * 24 * 3600, Secure: r.TLS != nil,
+				})
+				redirectStripToken(w, r)
+				return
+			}
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	})
+}
+
+// redirectStripToken sends a 302 to the same path minus the "token"
+// query parameter, so a one-shot token doesn't linger in the URL bar,
+// browser history, or Referer headers after the session cookie is set.
+func redirectStripToken(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	q.Del("token")
+	u := *r.URL
+	u.RawQuery = q.Encode()
+http.Redirect(w, r, u.String(), http.StatusFound)
 }
 
 func (s *Server) gateWeb(next http.HandlerFunc) http.HandlerFunc {
@@ -353,14 +376,11 @@ func (s *Server) handleViewerWS(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/deploy -> returns connection info for generating agent install commands.
 func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
-	// 不返回明文 secret,只返回打码版本用于确认;完整命令在前端拼接时用 **** 占位,
-	// 实际密钥由管理员从部署时记录的信息中填入。
-	masked := s.secret
-	if len(masked) > 8 {
-		masked = masked[:4] + "****" + masked[len(masked)-4:]
-	}
+	// 只返回 secret 是否已配置的布尔标志,不泄露任何密钥片段。
+	// 完整密钥由管理员从部署时记录的信息中填入,前端用占位符提示。
 	writeJSON(w, map[string]any{
-		"secret_masked": masked,
+		"has_secret": s.secret != "",
+		"secret_len": len(s.secret),
 	})
 }
 

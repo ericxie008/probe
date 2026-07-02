@@ -3,7 +3,14 @@
 set -euo pipefail
 
 INSTALL_DIR="/opt/probe-agent"
+ENV_FILE="/opt/probe-agent/probe.env"
 GOVERSION="1.23.4"
+GOMIN="1.22"
+# Go 官方 SHA256(留空则跳过校验,建议从 https://go.dev/dl/ 填入)
+GO_SHA256_AMD64=""
+GO_SHA256_ARM64=""
+GO_SHA256_ARMV6L=""
+GO_SHA256_MIPSLE=""
 
 G() { printf '\033[32m%s\033[0m\n' "$1"; }
 R() { printf '\033[31m%s\033[0m\n' "$1"; }
@@ -39,13 +46,15 @@ ensure_go() {
     gver=$(go version 2>/dev/null | grep -oE 'go[0-9]+\.[0-9]+' | head -1 | sed 's/go//')
     if [[ -n "$gver" ]]; then
       local major="${gver%%.*}" minor="${gver#*.}"
-      local ver_num=$(( major * 100 + minor ))
-      if (( ver_num >= 121 )); then
+      local min_major="${GOMIN%%.*}" min_minor="${GOMIN#*.}"
+      local need=$(( min_major * 100 + min_minor ))
+      local have=$(( major * 100 + minor ))
+      if (( have >= need )); then
         G "Go $(go version | awk '{print $3}') 满足要求"
         return 0
       fi
     fi
-    Y "系统 Go 版本太旧,需要 1.21+"
+    Y "系统 Go 版本太旧,需要 ${GOMIN}+"
   else
     Y "未检测到 Go"
   fi
@@ -63,8 +72,29 @@ ensure_go() {
   G "==> 从官方下载 Go ${GOVERSION} linux/${arch} ..."
   cd /tmp
   curl -fsSL "https://go.dev/dl/go${GOVERSION}.linux-${arch}.tar.gz" -o go.tar.gz || {
-    R "下载失败,请手动安装 Go 1.21+"; exit 1
+    R "下载失败,请手动安装 Go ${GOMIN}+"; exit 1
   }
+  # 完整性校验:若配置了对应架构的 SHA256,则验证后再解压
+  local expected_sha=""
+  case "$arch" in
+    amd64) expected_sha="$GO_SHA256_AMD64" ;;
+    arm64) expected_sha="$GO_SHA256_ARM64" ;;
+    armv6l) expected_sha="$GO_SHA256_ARMV6L" ;;
+    mipsle) expected_sha="$GO_SHA256_MIPSLE" ;;
+  esac
+  if [[ -n "$expected_sha" ]]; then
+    local got_sha
+    got_sha=$(sha256sum go.tar.gz | awk '{print $1}')
+    if [[ "${got_sha,,}" != "${expected_sha,,}" ]]; then
+      R "Go 下载包校验失败: 期望 ${expected_sha:0:16}…,实际 ${got_sha:0:16}…"
+      R "下载可能被篡改或镜像不同步,已中止。如确认无误可清空对应 GO_SHA256_* 变量后重试。"
+      rm -f go.tar.gz
+      exit 1
+    fi
+    G "Go 下载包 SHA256 校验通过"
+  else
+    Y "未配置 GO_SHA256_*,跳过完整性校验(建议从 https://go.dev/dl/ 填入官方校验和)"
+  fi
   rm -rf /usr/local/go
   mkdir -p /usr/local
   tar -C /usr/local -xzf go.tar.gz
@@ -100,18 +130,24 @@ EXTRA_ARGS=""
 # --------------------------------------------------------------------
 if [[ "$IS_OPENWRT" == "1" ]]; then
   G "==> 配置 OpenWrt init.d 服务"
+  # 凭据写入 600 权限的独立文件,不写进 init.d 脚本(后者默认全机可读)
+  cat > "$ENV_FILE" <<ENVEOF
+PROBE_TOKEN=$TOKEN
+ENVEOF
+  chmod 600 "$ENV_FILE"
   cat > /etc/init.d/probe-agent << 'INITEOF'
 #!/bin/sh /etc/rc.common
 START=99
 USE_PROCD=1
 start_service() {
+    . /opt/probe-agent/probe.env
     procd_open_instance
     procd_set_param command /opt/probe-agent/agent \
         -server "__SERVER__" \
-        -token "__TOKEN__" \
         -name "__NAME__" \
         -interval "__INTERVAL__" \
         __EXTRA__
+    procd_set_param env PROBE_TOKEN="$PROBE_TOKEN"
     procd_set_param respawn
     procd_set_param stdout 1
     procd_set_param stderr 1
@@ -120,7 +156,6 @@ start_service() {
 INITEOF
   # 替换占位符
   sed -i "s|__SERVER__|$SERVER|g" /etc/init.d/probe-agent
-  sed -i "s|__TOKEN__|$TOKEN|g" /etc/init.d/probe-agent
   sed -i "s|__NAME__|$NAME|g" /etc/init.d/probe-agent
   sed -i "s|__INTERVAL__|$INTERVAL|g" /etc/init.d/probe-agent
   sed -i "s|__EXTRA__|$EXTRA_ARGS|g" /etc/init.d/probe-agent
@@ -130,6 +165,12 @@ INITEOF
 else
   G "==> 配置 systemd 服务"
   SERVICE_FILE="/etc/systemd/system/probe-agent.service"
+  # 凭据写入独立的 EnvironmentFile(权限 600),不写进 unit 文件,
+  # 避免本机任何用户 cat /etc/systemd/system/*.service 即可读到密钥。
+  cat > "$ENV_FILE" <<ENVEOF
+PROBE_TOKEN=$TOKEN
+ENVEOF
+  chmod 600 "$ENV_FILE"
   cat > "$SERVICE_FILE" <<UNITSVC
 [Unit]
 Description=Probe Server Monitor Agent
@@ -138,9 +179,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+EnvironmentFile=$ENV_FILE
 ExecStart=$INSTALL_DIR/agent \\
   -server "$SERVER" \\
-  -token "$TOKEN" \\
   -name "$NAME" \\
   -interval "$INTERVAL" \\
   $EXTRA_ARGS
