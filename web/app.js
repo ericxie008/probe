@@ -431,7 +431,29 @@ async function showDeploy() {
     `systemctl cat probe-dashboard >/dev/null 2>&1 || sudo ./scripts/install-dashboard.sh\n` +
     `systemctl restart probe-dashboard`;
 
-  deployCmds = { dashInstall: dashInstallCmd, dashUpgrade: dashUpgradeCmd, install: installCmd, upgrade: upgradeCmd, manual: manualCmd };
+  const dashUninstallCmd = `# 卸载 Dashboard(服务端)\n` +
+    `systemctl stop probe-dashboard 2>/dev/null\n` +
+    `systemctl disable probe-dashboard 2>/dev/null\n` +
+    `rm -f /etc/systemd/system/probe-dashboard.service\n` +
+    `systemctl daemon-reload\n` +
+    `# 删除程序、数据、证书、密钥文件(不可恢复)\n` +
+    `rm -rf /opt/probe\n` +
+    `echo "Dashboard 已卸载,所有历史数据已清除"`;
+
+  const uninstallCmd = `# 卸载 Agent(被监控机)\n` +
+    `systemctl stop probe-agent 2>/dev/null\n` +
+    `systemctl disable probe-agent 2>/dev/null\n` +
+    `rm -f /etc/systemd/system/probe-agent.service\n` +
+    `systemctl daemon-reload\n` +
+    `# OpenWrt(如果有)\n` +
+    `/etc/init.d/probe-agent stop 2>/dev/null\n` +
+    `/etc/init.d/probe-agent disable 2>/dev/null\n` +
+    `rm -f /etc/init.d/probe-agent\n` +
+    `# 删除程序、密钥、agent.id 文件\n` +
+    `rm -rf /opt/probe-agent\n` +
+    `echo "Agent 已卸载"`;
+
+  deployCmds = { dashInstall: dashInstallCmd, dashUpgrade: dashUpgradeCmd, dashUninstall: dashUninstallCmd, install: installCmd, upgrade: upgradeCmd, uninstall: uninstallCmd, manual: manualCmd };
 
   // 构建模态框
   const modal = document.createElement("div");
@@ -459,6 +481,10 @@ async function showDeploy() {
           <div class="cmd-title"><span>升级 Dashboard</span><button class="copy-btn" data-copy="dashUpgrade">复制</button></div>
           <pre class="cmd-block" id="cmdDashUpgrade"></pre>
         </div>
+        <div class="cmd-section">
+          <div class="cmd-title"><span>卸载 Dashboard</span><button class="copy-btn" data-copy="dashUninstall">复制</button></div>
+          <pre class="cmd-block" id="cmdDashUninstall"></pre>
+        </div>
         <div class="cmd-group-title">Agent(被监控机)</div>
         <div class="cmd-section">
           <div class="cmd-title"><span>安装新 Agent</span><button class="copy-btn" data-copy="install">复制</button></div>
@@ -472,6 +498,10 @@ async function showDeploy() {
           <div class="cmd-title"><span>手动运行</span><button class="copy-btn" data-copy="manual">复制</button></div>
           <pre class="cmd-block" id="cmdManual"></pre>
         </div>
+        <div class="cmd-section">
+          <div class="cmd-title"><span>卸载 Agent</span><button class="copy-btn" data-copy="uninstall">复制</button></div>
+          <pre class="cmd-block" id="cmdUninstall"></pre>
+        </div>
       </div>
     </div>`;
   document.body.appendChild(modal);
@@ -484,8 +514,10 @@ async function showDeploy() {
   // 填入文本(避免 HTML 注入,用 textContent)
   document.getElementById("cmdDashInstall").textContent = dashInstallCmd;
   document.getElementById("cmdDashUpgrade").textContent = dashUpgradeCmd;
+  document.getElementById("cmdDashUninstall").textContent = dashUninstallCmd;
   document.getElementById("cmdInstall").textContent = installCmd;
   document.getElementById("cmdUpgrade").textContent = upgradeCmd;
+  document.getElementById("cmdUninstall").textContent = uninstallCmd;
   document.getElementById("cmdManual").textContent = manualCmd;
 }
 
