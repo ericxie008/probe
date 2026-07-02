@@ -9,10 +9,10 @@ const loginHTML = `<!DOCTYPE html>
 <title>探针 · 登录</title>
 <style>
 :root {
-  --bg: #0f1117; --bg-grad: radial-gradient(ellipse 90% 60% at 50% -10%, #1b2030 0%, transparent 70%);
-  --panel: #181c25; --border: #2a3040;
-  --text: #cdd5e0; --muted: #7a8599; --accent: #5b8def; --red: #f87171;
-  --green: #4ade80;
+  --bg: #0c0a09; --bg-grad: radial-gradient(ellipse 90% 50% at 50% -10%, #1c1815 0%, transparent 70%);
+  --panel: #171411; --border: hsl(20,6%,16%);
+  --text: #fafaf9; --muted: #8a827a; --accent: #6195ff; --red: #f87171;
+  --green: #34d399;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -26,7 +26,7 @@ body {
   padding: 36px 32px; width: 340px; max-width: 90vw;
 }
 .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; font-size: 18px; font-weight: 600; }
-.brand .dot { width: 10px; height: 10px; border-radius: 50%; background: #3fb950; box-shadow: 0 0 8px #3fb950; }
+.brand .dot { width: 10px; height: 10px; border-radius: 50%; background: #34d399; box-shadow: 0 0 8px #34d399; }
 .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
 label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
 input {

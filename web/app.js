@@ -250,9 +250,9 @@ function initCharts() {
     if (charts[selected].net) charts[selected].net.destroy();
   }
   charts[selected] = {
-    cpu: makeChart("cpuChart", [{c:"#5b8def",label:"CPU"}], 100),
+    cpu: makeChart("cpuChart", [{c:"#6195ff",label:"CPU"}], 100),
     mem: makeChart("memChart", [{c:"#c084fc",label:"内存"}], 100),
-    net: makeChart("netChart", [{c:"#4ade80",label:"↓"}, {c:"#facc15",label:"↑"}], 0, true),
+    net: makeChart("netChart", [{c:"#34d399",label:"↓"}, {c:"#fbbf24",label:"↑"}], 0, true),
   };
 }
 function makeChart(id, colors, max, rate) {
@@ -260,11 +260,11 @@ function makeChart(id, colors, max, rate) {
   if (!ctx) return null;
   let yScale;
   if (max) {
-    yScale = { min: 0, max: max, ticks: { color: "#7a8599" }, grid: { color: "#2a3040" } };
+    yScale = { min: 0, max: max, ticks: { color: "#8a827a" }, grid: { color: "hsl(20,6%,16%)" } };
   } else if (rate) {
-    yScale = { beginAtZero: true, ticks: { color: "#8b949e", callback: function(v) { return fmt.rate(v); } }, grid: { color: "#2a3040" } };
+    yScale = { beginAtZero: true, ticks: { color: "#8b949e", callback: function(v) { return fmt.rate(v); } }, grid: { color: "hsl(20,6%,16%)" } };
   } else {
-    yScale = { beginAtZero: true, ticks: { color: "#7a8599" }, grid: { color: "#2a3040" } };
+    yScale = { beginAtZero: true, ticks: { color: "#8a827a" }, grid: { color: "hsl(20,6%,16%)" } };
   }
   return new Chart(ctx, {
     type: "line",
