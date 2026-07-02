@@ -28,6 +28,7 @@ type Collector struct {
 	cpuCount              int
 	prevProc              map[int32]procSample
 	prevProcTime          time.Time
+	prevNetSample         time.Time
 }
 
 // procSample caches a process's accumulated CPU time and collection moment.
@@ -153,23 +154,31 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 		}
 	}
 
+	netNow := time.Now()
 	if counters, err := net.IOCounters(false); err == nil && len(counters) > 0 {
 		s.NetIn = counters[0].BytesRecv
 		s.NetOut = counters[0].BytesSent
 	}
-	dt := now.Sub(c.prevTime).Seconds()
-	if dt > 0 {
+	// Use the real wall-clock gap between consecutive network samples.
+	// Collect() includes a ~1s cpu.Percent() blocking call plus other
+	// I/O, so now-to-now spans ~4s not the 3s ticker interval. Using
+	// the ticker interval here systematically understated speeds.
+	netDt := netNow.Sub(c.prevNetSample).Seconds()
+	if !c.prevNetSample.IsZero() && netDt > 0 {
 		if s.NetIn >= c.prevNetIn {
-			s.NetSpeedIn = uint64(float64(s.NetIn-c.prevNetIn) / dt)
+			s.NetSpeedIn = uint64(float64(s.NetIn-c.prevNetIn) / netDt)
 		}
 		if s.NetOut >= c.prevNetOut {
-			s.NetSpeedOut = uint64(float64(s.NetOut-c.prevNetOut) / dt)
+			s.NetSpeedOut = uint64(float64(s.NetOut-c.prevNetOut) / netDt)
 		}
 	}
-	c.prevNetIn, c.prevNetOut, c.prevTime = s.NetIn, s.NetOut, now
+	c.prevNetIn, c.prevNetOut, c.prevNetSample = s.NetIn, s.NetOut, netNow
 
 	if ifaces, err := net.Interfaces(); err == nil {
 		for _, ifc := range ifaces {
+			if isVirtualIface(ifc.Name) {
+				continue
+			}
 			ni := proto.NetInterface{
 				Name: ifc.Name,
 				MAC:  ifc.HardwareAddr,
@@ -288,6 +297,24 @@ func isCPUSensor(key string) bool {
 	for _, p := range []string{"coretemp", "k10temp", "k8temp", "cpu_thermal",
 		"cpu-thermal", "cputemp", "tctl", "tdie", "package", "socket"} {
 		if strings.Contains(k, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// isVirtualIface reports whether an interface name corresponds to a
+// virtual or loopback adapter that is not a physical NIC (docker0,
+// veth*, br-*, tun*, lo, etc.).
+func isVirtualIface(name string) bool {
+	if name == "lo" {
+		return true
+	}
+	prefixes := []string{"docker", "veth", "br-", "tun", "tap", "virbr",
+		"vnet", "wg", "utun", "fw", "ifb"}
+	lower := strings.ToLower(name)
+	for _, p := range prefixes {
+		if strings.HasPrefix(lower, p) {
 			return true
 		}
 	}

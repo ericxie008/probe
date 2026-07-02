@@ -184,7 +184,8 @@ function renderDetail() {
     </div>
     <div class="charts">
       <div class="chart-box"><h3>CPU 使用率 (%)</h3><canvas id="cpuChart"></canvas></div>
-      <div class="chart-box"><h3>内存 / 网络</h3><canvas id="netChart"></canvas></div>
+      <div class="chart-box"><h3>内存使用率 (%)</h3><canvas id="memChart"></canvas></div>
+      <div class="chart-box"><h3>网络速率 (bytes/s)</h3><canvas id="netChart"></canvas></div>
     </div>
     <div class="section">
       <h2>磁盘</h2>
@@ -239,30 +240,33 @@ function initCharts() {
   // 销毁旧实例,防止内存泄漏
   if (charts[selected]) {
     if (charts[selected].cpu) charts[selected].cpu.destroy();
+    if (charts[selected].mem) charts[selected].mem.destroy();
     if (charts[selected].net) charts[selected].net.destroy();
   }
   charts[selected] = {
     cpu: makeChart("cpuChart", [{c:"#2f81f7",label:"CPU"}], 100),
-    net: makeChart("netChart", [
-      {c:"#a371f7",label:"内存%"},
-      {c:"#3fb950",label:"↓"},
-      {c:"#d29922",label:"↑"},
-    ]),
+    mem: makeChart("memChart", [{c:"#a371f7",label:"内存"}], 100),
+    net: makeChart("netChart", [{c:"#3fb950",label:"↓"}, {c:"#d29922",label:"↑"}], 0, true),
   };
 }
-function makeChart(id, colors, max) {
+function makeChart(id, colors, max, rate) {
   const ctx = document.getElementById(id);
   if (!ctx) return null;
+  let yScale;
+  if (max) {
+    yScale = { min: 0, max: max, ticks: { color: "#8b949e" }, grid: { color: "#21262d" } };
+  } else if (rate) {
+    yScale = { beginAtZero: true, ticks: { color: "#8b949e", callback: function(v) { return fmt.rate(v); } }, grid: { color: "#21262d" } };
+  } else {
+    yScale = { beginAtZero: true, ticks: { color: "#8b949e" }, grid: { color: "#21262d" } };
+  }
   return new Chart(ctx, {
     type: "line",
     data: { labels: [], datasets: colors.map(d => ({ label: d.label, borderColor: d.c, backgroundColor: d.c+"22", data: [], tension: .3, pointRadius: 0, borderWidth: 2, fill: true })) },
     options: {
       animation: false, responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: colors.length > 1, labels: { color: "#8b949e", boxWidth: 10 } } },
-      scales: {
-        x: { display: false },
-        y: max ? { min: 0, max: max, ticks: { color: "#8b949e" }, grid: { color: "#21262d" } } : { beginAtZero: true, ticks: { color: "#8b949e" }, grid: { color: "#21262d" } },
-      },
+      scales: { x: { display: false }, y: yScale },
     },
   });
 }
@@ -272,7 +276,8 @@ function pushChart(s) {
   const t = fmt.time(s.timestamp);
   push(c.cpu, [t, [s.cpu_usage]]);
   const memUsed = (s.memory_used / (s.memory_total||1)) * 100;
-  push(c.net, [t, [memUsed, s.net_speed_in ? Math.log10(s.net_speed_in+1)*8 : 0, s.net_speed_out ? Math.log10(s.net_speed_out+1)*8 : 0]]);
+  push(c.mem, [t, [memUsed]]);
+  push(c.net, [t, [s.net_speed_in || 0, s.net_speed_out || 0]]);
 }
 function push(ch, [label, vals]) {
   ch.data.labels.push(label);
@@ -339,10 +344,10 @@ async function loadHistory(id) {
       c.cpu.data.labels.push(t);
       c.cpu.data.datasets[0].data.push(row.cpu);
       const memUsed = (row.mem_used / (row.mem_total||1)) * 100;
-      c.net.data.labels.push(t);
-      c.net.data.datasets[0].data.push(memUsed);
+      c.mem.data.labels.push(t);
+      c.mem.data.datasets[0].data.push(memUsed);
     }
-    c.cpu.update("none"); c.net.update("none");
+    c.cpu.update("none"); c.mem.update("none");
   } catch (e) {}
 }
 
