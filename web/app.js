@@ -87,6 +87,9 @@ function setSort(key) {
 
 // ---------- 路由 ----------
 function route() {
+  // Cancel any pending list re-render so it can't overwrite the
+  // detail view or the card click handlers we're navigating away from.
+  if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
   const id = location.hash.replace("#/", "");
   if (id && states[id]) { selected = id; renderDetail(); }
   else { selected = null; renderList(); }
@@ -114,16 +117,19 @@ function renderList() {
   for (const id of ids) html += card(states[id]);
   html += "</div></main>";
   app.innerHTML = html;
-  for (const el of app.querySelectorAll(".card")) {
-    el.onclick = () => { location.hash = "/" + el.dataset.id; };
-  }
-  app.querySelectorAll(".edit-btn-sm").forEach(btn => {
-    btn.onclick = (e) => { e.stopPropagation(); renameAgent(btn.dataset.rename); };
-  });
-  app.querySelectorAll(".del-btn").forEach(btn => {
-    btn.onclick = (e) => { e.stopPropagation(); deleteAgent(btn.dataset.del); };
-  });
 }
+
+// Event delegation: one handler on the container catches clicks on any
+// card (or its children) without needing per-card onclick binding. This
+// survives innerHTML re-renders and fixes "clicking sometimes does nothing".
+app.addEventListener("click", (e) => {
+  const renameBtn = e.target.closest("[data-rename]");
+  if (renameBtn) { e.stopPropagation(); renameAgent(renameBtn.dataset.rename); return; }
+  const delBtn = e.target.closest(".del-btn");
+  if (delBtn) { e.stopPropagation(); deleteAgent(delBtn.dataset.del); return; }
+  const card = e.target.closest(".card");
+  if (card) { location.hash = "/" + card.dataset.id; }
+});
 
 function card(s) {
   const online = isOnline(s);
