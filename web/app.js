@@ -260,18 +260,18 @@ function makeChart(id, colors, max, rate) {
   if (!ctx) return null;
   let yScale;
   if (max) {
-    yScale = { min: 0, max: max, ticks: { color: "#8a827a" }, grid: { color: "hsl(20,6%,16%)" } };
+    yScale = { min: 0, max: max, ticks: { color: "#9a9a9a" }, grid: { color: "#474a52" } };
   } else if (rate) {
-    yScale = { beginAtZero: true, ticks: { color: "#8b949e", callback: function(v) { return fmt.rate(v); } }, grid: { color: "hsl(20,6%,16%)" } };
+    yScale = { beginAtZero: true, ticks: { color: "#9a9a9a", callback: function(v) { return fmt.rate(v); } }, grid: { color: "#474a52" } };
   } else {
-    yScale = { beginAtZero: true, ticks: { color: "#8a827a" }, grid: { color: "hsl(20,6%,16%)" } };
+    yScale = { beginAtZero: true, ticks: { color: "#9a9a9a" }, grid: { color: "#474a52" } };
   }
   return new Chart(ctx, {
     type: "line",
     data: { labels: [], datasets: colors.map(d => ({ label: d.label, borderColor: d.c, backgroundColor: d.c+"22", data: [], tension: .3, pointRadius: 0, borderWidth: 2, fill: true })) },
     options: {
       animation: false, responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: colors.length > 1, labels: { color: "#8b949e", boxWidth: 10 } } },
+      plugins: { legend: { display: colors.length > 1, labels: { color: "#9a9a9a", boxWidth: 10 } } },
       scales: { x: { display: false }, y: yScale },
     },
   });

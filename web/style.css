@@ -1,12 +1,12 @@
 :root {
-  --bg: #0c0a09;
-  --bg-grad: radial-gradient(ellipse 90% 50% at 50% -10%, #1c1815 0%, transparent 70%);
-  --panel: #171411;
-  --panel-hover: #201d1a;
-  --border: hsl(20, 6%, 16%);
-  --border-hover: hsl(20, 6%, 26%);
-  --text: #fafaf9;
-  --muted: #8a827a;
+  --bg: #2b2d31;
+  --bg-grad: radial-gradient(ellipse 90% 50% at 50% -10%, #353839 0%, transparent 70%);
+  --panel: #383a40;
+  --panel-hover: #404249;
+  --border: #474a52;
+  --border-hover: #5a5e68;
+  --text: #e8e8e8;
+  --muted: #9a9a9a;
   --accent: #6195ff;
   --accent-soft: rgba(97, 149, 255, 0.12);
   --green: #34d399;
@@ -39,7 +39,7 @@ header {
   justify-content: space-between;
   padding: 14px 28px;
   border-bottom: 1px solid var(--border);
-  background: rgba(12, 10, 9, 0.85);
+  background: rgba(43, 45, 49, 0.88);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   position: sticky;
@@ -233,7 +233,7 @@ table tbody tr:hover { background: var(--panel-hover); }
 }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .modal {
-  background: #1a1714; border: 1px solid var(--border); border-radius: 14px;
+  background: #383a40; border: 1px solid var(--border); border-radius: 14px;
   width: 680px; max-width: 92vw; max-height: 86vh; overflow: hidden;
   box-shadow: 0 8px 32px rgba(0,0,0,0.4); display: flex; flex-direction: column;
 }
