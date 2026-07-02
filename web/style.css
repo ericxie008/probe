@@ -190,7 +190,7 @@ main { padding: 24px 28px; max-width: 1600px; margin: 0 auto; }
   padding: 18px; box-shadow: var(--shadow);
 }
 .chart-box h3 { margin: 0 0 14px; font-size: 13px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
-.chart-box canvas { max-height: 200px; }
+.chart-box canvas { max-height: 240px; }
 
 .section { margin-top: 28px; }
 .section h2 { font-size: 14px; color: var(--muted); font-weight: 600; margin: 0 0 14px; text-transform: uppercase; letter-spacing: .5px; }

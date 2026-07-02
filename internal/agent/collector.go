@@ -65,6 +65,11 @@ func NewCollector() *Collector {
 	} else {
 		c.cpuCount = runtime.NumCPU()
 	}
+	// Prime the CPU baseline so the first Collect() can compute a delta
+	// instead of returning 0% for one cycle.
+	if t, err := cpu.Times(true); err == nil {
+		c.prevCPUTimes = t
+	}
 	return c
 }
 
