@@ -37,6 +37,8 @@ type Collector struct {
 	cachedDisks           []proto.DiskInfo
 	cachedDiskTotal       uint64
 	cachedDiskUsed        uint64
+	cachedProcs           []proto.ProcessInfo
+	cachedConnCount       uint32
 }
 
 // procSample caches a process's accumulated CPU time and collection moment.
@@ -121,27 +123,12 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 	}
 	s.CPUModel = c.cpuModel
 	s.CPUCount = c.cpuCount
-	if temps, err := host.SensorsTemperatures(); err == nil {
-		fallback := 0.0
-		for _, t := range temps {
-			if t.Temperature <= 0 {
-				continue
-			}
-			if isCPUSensor(t.SensorKey) {
-				s.CPUTemp = t.Temperature
-				break
-			}
-			if fallback == 0 {
-				fallback = t.Temperature
-			}
-		}
-		if s.CPUTemp == 0 {
-			s.CPUTemp = fallback
-		}
-	}
-	if s.CPUTemp == 0 {
-		s.CPUTemp = readLinuxThermal()
-	}
+	// Temperature: use lightweight sysfs reads. The gopsutil path
+	// (host.SensorsTemperatures) does filepath.Glob + per-file I/O
+	// over the whole hwmon tree, which is slow on OpenWrt flash.
+	// readLinuxThermal reads only /sys/class/thermal, which is much
+	// cheaper and works on the same hardware.
+	s.CPUTemp = readLinuxThermal()
 
 	if vm, err := mem.VirtualMemory(); err == nil {
 		s.MemoryTotal = vm.Total
@@ -233,7 +220,10 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 	}
 	s.Interfaces = c.cachedInterfaces
 
-	if procs, err := process.Processes(); err == nil {
+	// Process table: collect every 5th tick (~15s) since this is the
+	// heaviest operation — it walks all of /proc and does 2 reads per PID.
+	if c.tick%5 == 0 {
+		procs, _ := process.Processes()
 		curProc := make(map[int32]procSample, len(procs))
 		entries := make([]procEntry, 0, len(procs))
 		var memTotal uint64
@@ -241,9 +231,6 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 			memTotal = vm.Total
 		}
 		for _, p := range procs {
-			// One MemoryInfo() call gives us RSS directly. We compute
-			// the percent ourselves (RSS/total*100) to avoid a second
-			// syscall per process.
 			mi, err := p.MemoryInfo()
 			if err != nil || mi == nil || mi.RSS == 0 {
 				continue
@@ -262,6 +249,7 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 			entries = entries[:10]
 		}
 		dt := now.Sub(c.prevProcTime).Seconds()
+		var procs2 []proto.ProcessInfo
 		for _, e := range entries {
 			nm, _ := e.p.Name()
 			cpuPct := 0.0
@@ -270,21 +258,31 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 					cpuPct = (cur.cpuTime - prev.cpuTime) / dt * 100
 				}
 			}
-			s.Processes = append(s.Processes, proto.ProcessInfo{
+			procs2 = append(procs2, proto.ProcessInfo{
 				PID: e.p.Pid, Name: nm, CPU: cpuPct, Memory: e.rss,
 			})
 		}
 		c.prevProc = curProc
 		c.prevProcTime = now
+		c.cachedProcs = procs2
 	}
+	s.Processes = c.cachedProcs
 
-	if conns, err := net.Connections("tcp"); err == nil {
-		for _, cn := range conns {
-			if cn.Status == "ESTABLISHED" {
-				s.ConnCount++
+	// TCP connection count: throttle to every 5th tick. On OpenWrt
+	// routers doing NAT there can be thousands of connections, and
+	// net.Connections() reads them all from /proc/net/tcp.
+	if c.tick%5 == 0 {
+		var count uint32
+		if conns, err := net.Connections("tcp"); err == nil {
+			for _, cn := range conns {
+				if cn.Status == "ESTABLISHED" {
+					count++
+				}
 			}
 		}
+		c.cachedConnCount = count
 	}
+	s.ConnCount = c.cachedConnCount
 
 	c.tick++
 	s.Timestamp = now.Unix()
