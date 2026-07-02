@@ -250,9 +250,9 @@ function initCharts() {
     if (charts[selected].net) charts[selected].net.destroy();
   }
   charts[selected] = {
-    cpu: makeChart("cpuChart", [{c:"#2563eb",label:"CPU"}], 100),
-    mem: makeChart("memChart", [{c:"#9333ea",label:"内存"}], 100),
-    net: makeChart("netChart", [{c:"#16a34a",label:"↓"}, {c:"#ca8a04",label:"↑"}], 0, true),
+    cpu: makeChart("cpuChart", [{c:"#3b82f6",label:"CPU"}], 100),
+    mem: makeChart("memChart", [{c:"#a855f7",label:"内存"}], 100),
+    net: makeChart("netChart", [{c:"#22c55e",label:"↓"}, {c:"#f59e0b",label:"↑"}], 0, true),
   };
 }
 function makeChart(id, colors, max, rate) {
@@ -260,18 +260,18 @@ function makeChart(id, colors, max, rate) {
   if (!ctx) return null;
   let yScale;
   if (max) {
-    yScale = { min: 0, max: max, ticks: { color: "#64748b" }, grid: { color: "#e2e8f0" } };
+    yScale = { min: 0, max: max, ticks: { color: "#7c8aa5" }, grid: { color: "#243044" } };
   } else if (rate) {
-    yScale = { beginAtZero: true, ticks: { color: "#64748b", callback: function(v) { return fmt.rate(v); } }, grid: { color: "#e2e8f0" } };
+    yScale = { beginAtZero: true, ticks: { color: "#7c8aa5", callback: function(v) { return fmt.rate(v); } }, grid: { color: "#243044" } };
   } else {
-    yScale = { beginAtZero: true, ticks: { color: "#64748b" }, grid: { color: "#e2e8f0" } };
+    yScale = { beginAtZero: true, ticks: { color: "#7c8aa5" }, grid: { color: "#243044" } };
   }
   return new Chart(ctx, {
     type: "line",
     data: { labels: [], datasets: colors.map(d => ({ label: d.label, borderColor: d.c, backgroundColor: d.c+"22", data: [], tension: .3, pointRadius: 0, borderWidth: 2, fill: true })) },
     options: {
       animation: false, responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: colors.length > 1, labels: { color: "#64748b", boxWidth: 10 } } },
+      plugins: { legend: { display: colors.length > 1, labels: { color: "#7c8aa5", boxWidth: 10 } } },
       scales: { x: { display: false }, y: yScale },
     },
   });

@@ -9,9 +9,9 @@ const loginHTML = `<!DOCTYPE html>
 <title>探针 · 登录</title>
 <style>
 :root {
-  --bg: #f8fafc; --bg-grad: none;
-  --panel: #ffffff; --border: #e2e8f0;
-  --text: #1e293b; --muted: #64748b; --accent: #2563eb; --red: #f87171;
+  --bg: #0b1220; --bg-grad: radial-gradient(ellipse 90% 50% at 50% -10%, #16213a 0%, transparent 70%);
+  --panel: #111827; --border: #243044;
+  --text: #e2e8f0; --muted: #7c8aa5; --accent: #3b82f6; --red: #f87171;
   --green: #34d399;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
