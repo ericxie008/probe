@@ -40,6 +40,7 @@ func main() {
 		t := time.NewTicker(10 * time.Minute)
 		for range t.C {
 			store.Prune()
+			store.ReapStale()
 		}
 	}()
 
@@ -56,8 +57,12 @@ func main() {
 	mux.Handle("/", api.GateStatic(safeStatic(http.FileServer(http.Dir("web")))))
 
 	srv := &http.Server{Addr: *addr, Handler: mux}
-	srv.ReadTimeout = 15 * time.Second
-	srv.WriteTimeout = 30 * time.Second
+	// ReadTimeout is enforced per-read via SetReadDeadline inside the WS
+	// handlers, but a server-level timeout here would also kill idle
+	// WebSocket upgrades after 30s. WebSocket connections are long-lived,
+	// so we do NOT set a server-level WriteTimeout — gorilla/websocket
+	// manages its own per-write deadlines.
+	srv.ReadTimeout = 30 * time.Second
 	srv.IdleTimeout = 120 * time.Second
 
 	// Graceful shutdown on SIGTERM / SIGINT (systemd stop, Ctrl-C).

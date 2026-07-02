@@ -352,6 +352,12 @@ async function loadHistory(id) {
 }
 
 // ---------- 部署面板 ----------
+// shq wraps a value in single quotes for safe shell interpolation.
+// Escapes any embedded single-quote via the standard '\'' trick.
+function shq(v) {
+  return "'" + String(v).replace(/'/g, "'\''") + "'";
+}
+
 let deploySecret = "";
 let deployCmds = {};
 async function showDeploy() {
@@ -378,7 +384,7 @@ async function showDeploy() {
 
   const installCmd = `# 一键安装 Agent(Linux)\n` +
     `git clone ${cloneUrl} probe && cd probe\n` +
-    `sudo SERVER=${host} TOKEN=${deploySecret || "<填入密钥: " + maskedSecret + ">"} TLS=1${isTLS ? " INSECURE=1" : ""} ./scripts/install-agent.sh\n` +
+    `sudo SERVER=${shq(host)} TOKEN=${shq(deploySecret || "<填入密钥: " + maskedSecret + ">")} TLS=1${isTLS ? " INSECURE=1" : ""} ./scripts/install-agent.sh\n` +
     `# NAME 不传默认用系统主机名,自动唯一`;
 
   const upgradeCmd = `# 升级 Agent\n` +
@@ -386,18 +392,18 @@ async function showDeploy() {
     `export PATH="/usr/local/go/bin:$PATH"\n` +
     `go build -trimpath -ldflags "-s -w" -o /opt/probe-agent/agent ./cmd/agent\n` +
     `# 确保 service 文件存在\n` +
-    `systemctl cat probe-agent >/dev/null 2>&1 || sudo SERVER=${host} TOKEN=${deploySecret || "<密钥>"} TLS=1${isTLS ? " INSECURE=1" : ""} ./scripts/install-agent.sh\n` +
+    `systemctl cat probe-agent >/dev/null 2>&1 || sudo SERVER=${shq(host)} TOKEN=${shq(deploySecret || "<密钥>")} TLS=1${isTLS ? " INSECURE=1" : ""} ./scripts/install-agent.sh\n` +
     `systemctl restart probe-agent`;
 
   const manualCmd = `# 手动运行 Agent(不用脚本)\n` +
     `# -name 可选,不传默认用主机名\n` +
-    `./agent -server ${host} -token ${deploySecret || "<填入密钥>"}${tlsFlag}${insecureFlag}`;
+    `./agent -server ${shq(host)} -token ${shq(deploySecret || "<填入密钥>")}${tlsFlag}${insecureFlag}`;
 
   const dashInstallCmd = `# 一键安装 Dashboard(服务端)\n` +
     `git clone ${cloneUrl} probe && cd probe\n` +
     `sudo CERT="你的证书路径" KEY="你的私钥路径" ./scripts/install-dashboard.sh\n` +
     `# 无已有证书用域名自动申请:\n` +
-    `# sudo DOMAIN=${hostname} ./scripts/install-dashboard.sh`;
+    `# sudo DOMAIN=${shq(hostname)} ./scripts/install-dashboard.sh`;
 
   const dashUpgradeCmd = `# 升级 Dashboard\n` +
     `cd ~/probe && git pull\n` +

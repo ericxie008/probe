@@ -248,13 +248,15 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 	return s
 }
 
+// isIPv6 reports whether an interface address is IPv6. gopsutil returns
+// addresses with a CIDR suffix (e.g. "192.168.1.10/24" or "fe80::1/64"),
+// so we strip the prefix first to avoid any ambiguity.
 func isIPv6(addr string) bool {
-	for i := 0; i < len(addr); i++ {
-		if addr[i] == ':' {
-			return true
-		}
+	ip := addr
+	if i := strings.IndexByte(ip, '/'); i >= 0 {
+		ip = ip[:i]
 	}
-	return false
+	return strings.Contains(ip, ":")
 }
 
 // readLinuxThermal reads CPU temperature from /sys/class/thermal/thermal_zone*/temp.

@@ -17,11 +17,11 @@ const historyWindow = 2 * time.Hour
 // Store keeps a rolling window of state history per agent in SQLite plus a
 // hot in-memory copy of each agent's latest state for fast reads.
 type Store struct {
-	mu     sync.RWMutex
-	latest map[string]*proto.State // agentID -> most recent state
+	mu      sync.RWMutex
+	latest  map[string]*proto.State // agentID -> most recent state
 	known   map[string]string       // agentID -> name
-	deleted map[string]struct{}       // admin-deleted agentIDs
-	db     *sql.DB
+	deleted map[string]struct{}     // admin-deleted agentIDs
+	db      *sql.DB
 }
 
 // NewStore opens (or creates) the SQLite database and ensures tables exist.
@@ -57,7 +57,7 @@ func NewStore(path string) (*Store, error) {
 		latest:  make(map[string]*proto.State),
 		known:   make(map[string]string),
 		deleted: deleted,
-		db:     db,
+		db:      db,
 	}, nil
 }
 
@@ -161,15 +161,15 @@ func (s *Store) One(id string) *proto.State {
 
 // MetricRow is one historical sample for charting.
 type MetricRow struct {
-	TS        int64   `json:"ts"`
-	CPU       float64 `json:"cpu"`
-	MemUsed   uint64  `json:"mem_used"`
-	MemTotal  uint64  `json:"mem_total"`
-	SwapUsed  uint64  `json:"swap_used"`
-	DiskUsed  uint64  `json:"disk_used"`
-	NetIn     uint64  `json:"net_in"`
-	NetOut    uint64  `json:"net_out"`
-	Load1     float64 `json:"load1"`
+	TS       int64   `json:"ts"`
+	CPU      float64 `json:"cpu"`
+	MemUsed  uint64  `json:"mem_used"`
+	MemTotal uint64  `json:"mem_total"`
+	SwapUsed uint64  `json:"swap_used"`
+	DiskUsed uint64  `json:"disk_used"`
+	NetIn    uint64  `json:"net_in"`
+	NetOut   uint64  `json:"net_out"`
+	Load1    float64 `json:"load1"`
 }
 
 // History returns the metric samples for an agent since `since` (unix seconds).
@@ -216,6 +216,7 @@ func (s *Store) Servers() []ServerMeta {
 	}
 	return out
 }
+
 // Rename sets a display-name override for an agent. This takes precedence over
 // the name the agent reports on connect, so renaming survives reconnection.
 func (s *Store) Rename(id, name string) error {
@@ -241,6 +242,7 @@ func (s *Store) Delete(id string) error {
 	_, err = s.db.Exec(`DELETE FROM servers WHERE id=?`, id)
 	return err
 }
+
 // overrideName returns the admin-set display name for an agent, if any.
 func (s *Store) overrideName(id string) string {
 	var n string
@@ -249,6 +251,7 @@ func (s *Store) overrideName(id string) string {
 	}
 	return n
 }
+
 // SetLatestName overrides the name field of the cached latest state for an
 // agent, so renders reflect a rename immediately. No-op if unknown.
 func (s *Store) SetLatestName(id, name string) {
@@ -258,6 +261,7 @@ func (s *Store) SetLatestName(id, name string) {
 		st.Name = name
 	}
 }
+
 // LatestByID returns the cached state for one agent (or nil).
 func (s *Store) LatestByID(id string) *proto.State {
 	s.mu.RLock()
@@ -269,4 +273,23 @@ func (s *Store) LatestByID(id string) *proto.State {
 func (s *Store) Prune() {
 	cutoff := time.Now().Add(-historyWindow).Unix()
 	_, _ = s.db.Exec(`DELETE FROM metrics WHERE ts < ?`, cutoff)
+}
+
+// staleAge is how old a cached state must be before it's reaped from
+// memory. States older than this mean the agent is offline and the
+// stale pointer would otherwise linger forever, slowly leaking memory.
+const staleAge = 2 * time.Minute
+
+// ReapStale removes in-memory latest states whose timestamp is older
+// than staleAge, freeing memory for agents that have gone offline.
+// Called alongside Prune() on the periodic ticker.
+func (s *Store) ReapStale() {
+	cutoff := time.Now().Add(-staleAge).Unix()
+	s.mu.Lock()
+	for id, st := range s.latest {
+		if st.Timestamp < cutoff {
+			delete(s.latest, id)
+		}
+	}
+	s.mu.Unlock()
 }

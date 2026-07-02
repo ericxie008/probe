@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,14 +29,23 @@ func checkOrigin(r *http.Request) bool {
 	if origin == "" {
 		return true // non-browser clients (curl, agent) have no Origin
 	}
-	host := r.Host
-	// allow same-origin: Origin's host must match the request Host
-	if strings.Contains(origin, "://"+host) || strings.HasSuffix(origin, host) {
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	// Extract the hostname (no port) from both Origin and Host.
+	originHost := u.Hostname()
+	hostPort := r.Host
+	hostName := hostPort
+	if h, _, err := net.SplitHostPort(hostPort); err == nil {
+		hostName = h
+	}
+	if originHost == hostName && originHost != "" {
 		return true
 	}
-	// fall back to allowing localhost dev origins
-	for _, h := range []string{"localhost", "127.0.0.1", "0.0.0.0"} {
-		if strings.Contains(origin, "://"+h) {
+	// Allow localhost dev origins.
+	for _, h := range []string{"localhost", "127.0.0.1", "::1"} {
+		if originHost == h {
 			return true
 		}
 	}
