@@ -111,12 +111,15 @@ function renderList() {
   for (const [k, label] of opts) {
     const active = sortKey === k;
     const arrow = active ? (sortDir === 1 ? " ↑" : " ↓") : "";
-    html += `<button class="sort-btn${active ? " active" : ""}" onclick="setSort('${k}')">${label}${arrow}</button>`;
+    html += `<button class="sort-btn${active ? " active" : ""}" data-sort="${k}">${label}${arrow}</button>`;
   }
   html += '</div><div class="grid">';
   for (const id of ids) html += card(states[id]);
   html += "</div></main>";
   app.innerHTML = html;
+  app.querySelectorAll("[data-sort]").forEach(btn => {
+    btn.onclick = () => setSort(btn.dataset.sort);
+  });
 }
 
 // Event delegation: one handler on the container catches clicks on any
@@ -432,39 +435,45 @@ async function showDeploy() {
     <div class="modal">
       <div class="modal-head">
         <h2>部署与升级</h2>
-        <button class="modal-close" onclick="document.getElementById('deployModal').remove()">✕</button>
+        <button class="modal-close" id="modalCloseBtn">✕</button>
       </div>
       <div class="modal-body">
         <div class="cmd-section token-input-row">
           <span class="token-label">Agent 密钥</span>
           <input type="text" id="secretInput" class="token-input" placeholder="${maskedSecret ? "已设置(" + maskedSecret + "),重新输入可覆盖" : "输入 Agent 密钥"}" value="${deploySecret}">
-          <button class="copy-btn" onclick="saveSecret()">保存</button>
+          <button class="copy-btn" id="saveSecretBtn">保存</button>
         </div>
         <div class="cmd-group-title">Dashboard(服务端)</div>
         <div class="cmd-section">
-          <div class="cmd-title"><span>安装 Dashboard</span><button class="copy-btn" onclick="copyCmd(this, 'dashInstall')">复制</button></div>
+          <div class="cmd-title"><span>安装 Dashboard</span><button class="copy-btn" data-copy="dashInstall">复制</button></div>
           <pre class="cmd-block" id="cmdDashInstall"></pre>
         </div>
         <div class="cmd-section">
-          <div class="cmd-title"><span>升级 Dashboard</span><button class="copy-btn" onclick="copyCmd(this, 'dashUpgrade')">复制</button></div>
+          <div class="cmd-title"><span>升级 Dashboard</span><button class="copy-btn" data-copy="dashUpgrade">复制</button></div>
           <pre class="cmd-block" id="cmdDashUpgrade"></pre>
         </div>
         <div class="cmd-group-title">Agent(被监控机)</div>
         <div class="cmd-section">
-          <div class="cmd-title"><span>安装新 Agent</span><button class="copy-btn" onclick="copyCmd(this, 'install')">复制</button></div>
+          <div class="cmd-title"><span>安装新 Agent</span><button class="copy-btn" data-copy="install">复制</button></div>
           <pre class="cmd-block" id="cmdInstall"></pre>
         </div>
         <div class="cmd-section">
-          <div class="cmd-title"><span>升级已有 Agent</span><button class="copy-btn" onclick="copyCmd(this, 'upgrade')">复制</button></div>
+          <div class="cmd-title"><span>升级已有 Agent</span><button class="copy-btn" data-copy="upgrade">复制</button></div>
           <pre class="cmd-block" id="cmdUpgrade"></pre>
         </div>
         <div class="cmd-section">
-          <div class="cmd-title"><span>手动运行</span><button class="copy-btn" onclick="copyCmd(this, 'manual')">复制</button></div>
+          <div class="cmd-title"><span>手动运行</span><button class="copy-btn" data-copy="manual">复制</button></div>
           <pre class="cmd-block" id="cmdManual"></pre>
         </div>
       </div>
     </div>`;
   document.body.appendChild(modal);
+  // Bind modal events (no inline onclick for CSP compliance)
+  document.getElementById("modalCloseBtn").onclick = () => modal.remove();
+  document.getElementById("saveSecretBtn").onclick = saveSecret;
+  modal.querySelectorAll("[data-copy]").forEach(btn => {
+    btn.onclick = () => copyCmd(btn, btn.dataset.copy);
+  });
   // 填入文本(避免 HTML 注入,用 textContent)
   document.getElementById("cmdDashInstall").textContent = dashInstallCmd;
   document.getElementById("cmdDashUpgrade").textContent = dashUpgradeCmd;
@@ -507,8 +516,10 @@ function esc(s) {
 }
 
 // 启动
-const header = `<header><div class="brand"><span class="dot"></span>探针 · 服务器监控</div><div class="header-right"><span class="summary">连接中…</span><button class="deploy-btn" onclick="showDeploy()" title="部署与升级">部署</button><button class="logout-btn" id="logoutBtn" title="退出登录" onclick="doLogout()">退出</button></div></header>`;
+const header = `<header><div class="brand"><span class="dot"></span>探针 · 服务器监控</div><div class="header-right"><span class="summary">连接中…</span><button class="deploy-btn" id="deployBtn" title="部署与升级">部署</button><button class="logout-btn" id="logoutBtn" title="退出登录">退出</button></div></header>`;
 document.body.insertAdjacentHTML("afterbegin", header);
+document.getElementById("deployBtn").onclick = showDeploy;
+document.getElementById("logoutBtn").onclick = doLogout;
 // 先初始化 overrideNames,再连接 WebSocket 和渲染,防止刷新后改名丢失
 initOverrideNames().then(() => { connect(); route(); });
 
