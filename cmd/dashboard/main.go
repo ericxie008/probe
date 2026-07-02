@@ -132,7 +132,7 @@ func setSecurityHeaders(w http.ResponseWriter, r *http.Request) {
 			"script-src 'self' https://cdn.jsdelivr.net; "+
 			"style-src 'self' 'unsafe-inline'; "+
 			"img-src 'self' data:; "+
-			"connect-src 'self' wss: ws:; "+
+			"connect-src 'self' https://cdn.jsdelivr.net wss: ws:; "+
 			"font-src 'self'; "+
 			"object-src 'none'; base-uri 'self'")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
