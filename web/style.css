@@ -153,9 +153,10 @@ main { padding: 24px 28px; max-width: 1600px; margin: 0 auto; }
 
 /* ===== Net row ===== */
 .card .net {
-  display: flex; flex-wrap: wrap; gap: 6px 16px;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 16px;
   margin-top: 10px; font-size: 11px; color: var(--muted);
 }
+.card .net span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card .net b { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
 
 /* ===== Offline card ===== */
