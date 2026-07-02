@@ -199,6 +199,15 @@ const (
 func (s *Server) loginRateLimit(ip string) bool {
 	s.loginMu.Lock()
 	defer s.loginMu.Unlock()
+	// Opportunistic cleanup: purge entries older than the ban window so
+	// the map doesn't grow unbounded from spoofed X-Forwarded-For IPs.
+	if len(s.loginFails) > 256 {
+		for k, b := range s.loginFails {
+			if time.Since(b.lastFail) > loginBanTime {
+				delete(s.loginFails, k)
+			}
+		}
+	}
 	b, ok := s.loginFails[ip]
 	if !ok {
 		b = &loginBucket{}

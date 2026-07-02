@@ -17,11 +17,12 @@ const historyWindow = 2 * time.Hour
 // Store keeps a rolling window of state history per agent in SQLite plus a
 // hot in-memory copy of each agent's latest state for fast reads.
 type Store struct {
-	mu      sync.RWMutex
-	latest  map[string]*proto.State // agentID -> most recent state
-	known   map[string]string       // agentID -> name
-	deleted map[string]struct{}     // admin-deleted agentIDs
-	db      *sql.DB
+	mu        sync.RWMutex
+	latest    map[string]*proto.State // agentID -> most recent state
+	known     map[string]string       // agentID -> name
+	deleted   map[string]struct{}     // admin-deleted agentIDs
+	overrides map[string]string       // agentID -> override name (cached)
+	db        *sql.DB
 }
 
 // NewStore opens (or creates) the SQLite database and ensures tables exist.
@@ -43,8 +44,9 @@ func NewStore(path string) (*Store, error) {
 	} {
 		db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, col.tbl, col.col, col.typ))
 	}
-	// Load deleted set from SQLite (survives restarts)
+	// Load deleted set and override names from SQLite (survives restarts)
 	deleted := make(map[string]struct{})
+	overrides := make(map[string]string)
 	drows, _ := db.Query(`SELECT id FROM deleted_servers`)
 	for drows.Next() {
 		var did string
@@ -53,11 +55,20 @@ func NewStore(path string) (*Store, error) {
 		}
 	}
 	drows.Close()
+	orows, _ := db.Query(`SELECT id, override_name FROM servers WHERE override_name IS NOT NULL`)
+	for orows.Next() {
+		var oid, oname string
+		if orows.Scan(&oid, &oname) == nil {
+			overrides[oid] = oname
+		}
+	}
+	orows.Close()
 	return &Store{
-		latest:  make(map[string]*proto.State),
-		known:   make(map[string]string),
-		deleted: deleted,
-		db:      db,
+		latest:    make(map[string]*proto.State),
+		known:     make(map[string]string),
+		deleted:   deleted,
+		overrides: make(map[string]string),
+		db:        db,
 	}, nil
 }
 
@@ -220,8 +231,13 @@ func (s *Store) Servers() []ServerMeta {
 // Rename sets a display-name override for an agent. This takes precedence over
 // the name the agent reports on connect, so renaming survives reconnection.
 func (s *Store) Rename(id, name string) error {
-	_, err := s.db.Exec(`UPDATE servers SET override_name=? WHERE id=?`, name, id)
-	return err
+	if _, err := s.db.Exec(`UPDATE servers SET override_name=? WHERE id=?`, name, id); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.overrides[id] = name
+	s.mu.Unlock()
+	return nil
 }
 
 // Delete removes an agent and all its metrics from the database and cache.
@@ -229,6 +245,7 @@ func (s *Store) Delete(id string) error {
 	s.mu.Lock()
 	delete(s.latest, id)
 	delete(s.known, id)
+	delete(s.overrides, id)
 	s.deleted[id] = struct{}{} // block re-registration
 	s.mu.Unlock()
 	// Persist to SQLite so it survives restarts
@@ -244,11 +261,11 @@ func (s *Store) Delete(id string) error {
 }
 
 // overrideName returns the admin-set display name for an agent, if any.
+// Uses the in-memory cache to avoid a SQLite query on every UpdateState.
 func (s *Store) overrideName(id string) string {
-	var n string
-	if err := s.db.QueryRow(`SELECT override_name FROM servers WHERE id=?`, id).Scan(&n); err != nil {
-		return ""
-	}
+	s.mu.RLock()
+	n := s.overrides[id]
+	s.mu.RUnlock()
 	return n
 }
 

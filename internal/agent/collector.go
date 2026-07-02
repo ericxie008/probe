@@ -1,9 +1,11 @@
 package agent
 
 import (
+	"bytes"
 	"os"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,8 +33,6 @@ type Collector struct {
 	prevCPUTimes          []cpu.TimesStat
 	tick                  int    // increments each Collect() call
 	cachedOS              string // semi-static host info
-	cachedUptime          uint64
-	cachedBootTime        uint64
 	cachedInterfaces      []proto.NetInterface
 	cachedDisks           []proto.DiskInfo
 	cachedDiskTotal       uint64
@@ -44,7 +44,6 @@ type Collector struct {
 // procSample caches a process's accumulated CPU time and collection moment.
 type procSample struct {
 	cpuTime float64
-	ts      time.Time
 }
 
 // procEntry pairs a process handle with its memory percent and RSS.
@@ -246,7 +245,7 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 			}
 			entries = append(entries, procEntry{p: p, m: pct, rss: mi.RSS})
 			if t, err := p.Times(); err == nil {
-				curProc[p.Pid] = procSample{cpuTime: t.Total(), ts: now}
+				curProc[p.Pid] = procSample{cpuTime: t.Total()}
 			}
 		}
 		sort.Slice(entries, func(i, j int) bool { return entries[i].m > entries[j].m })
@@ -322,33 +321,13 @@ func readLinuxThermal() float64 {
 		if err != nil {
 			continue
 		}
-		var milli int
-		for _, c := range data {
-			if c >= '0' && c <= '9' {
-				milli = milli*10 + int(c-'0')
-			} else {
-				break
-			}
-		}
-		if milli > 0 {
+		data = bytes.TrimSpace(data)
+		milli, err := strconv.Atoi(string(data))
+		if err == nil && milli > 0 {
 			return float64(milli) / 1000.0
 		}
 	}
 	return 0
-}
-
-// isCPUSensor reports whether a sensor name likely represents a CPU
-// temperature (coretemp, k10temp, Tctl, etc.) rather than an ACPI,
-// motherboard, or disk sensor.
-func isCPUSensor(key string) bool {
-	k := strings.ToLower(key)
-	for _, p := range []string{"coretemp", "k10temp", "k8temp", "cpu_thermal",
-		"cpu-thermal", "cputemp", "tctl", "tdie", "package", "socket"} {
-		if strings.Contains(k, p) {
-			return true
-		}
-	}
-	return false
 }
 
 // isVirtualIface reports whether an interface name corresponds to a

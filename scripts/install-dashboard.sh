@@ -29,7 +29,6 @@ ensure_go() {
   if command -v go >/dev/null 2>&1; then
     local gover
     gover=$(go version 2>/dev/null | grep -oE 'go[0-9]+\.[0-9]+' | head -1 | sed 's/go//')
-    local major="${gover%%.*}" minor="${gver#*.}"
     local major="${gover%%.*}" minor="${gover#*.}"
     # Go 版本号是 1.xx 格式,比较 major.minor * 100 转成整数
     local ver_num=$(( major * 100 + minor ))
@@ -54,7 +53,7 @@ ensure_go() {
   G "==> 从官方下载 Go ${GOVERSION} linux/${arch} ..."
   cd /tmp
   curl -fsSL "https://go.dev/dl/go${GOVERSION}.linux-${arch}.tar.gz" -o go.tar.gz || {
-    R "下载失败,请手动安装 Go 1.${need}+: https://go.dev/dl/"; exit 1
+    R "下载失败,请手动安装 Go 1.21+: https://go.dev/dl/"; exit 1
   }
   rm -rf /usr/local/go
   tar -C /usr/local -xzf go.tar.gz

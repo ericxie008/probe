@@ -3,6 +3,7 @@ package agent
 import (
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -29,6 +30,9 @@ type Config struct {
 	TLS      bool // connect with wss:// (TLS) instead of ws://
 	Insecure bool // skip TLS cert verification (self-signed / private net)
 }
+
+// errAuthFailed signals that the server rejected the token.
+var errAuthFailed = errors.New("authentication failed")
 
 // Client is the agent: it connects to the dashboard, authenticates, and
 // periodically streams host metrics. It is read-only on the server side
@@ -57,7 +61,11 @@ func NewClient(cfg Config) *Client {
 func (c *Client) Run() {
 	backoff := time.Second
 	for {
-		if err := c.runOnce(); err != nil {
+		err := c.runOnce()
+		if err != nil {
+			if errors.Is(err, errAuthFailed) {
+				log.Fatal("authentication failed, check token. exiting.")
+			}
 			log.Printf("agent disconnected: %v", err)
 		}
 		time.Sleep(backoff)
@@ -114,7 +122,8 @@ func (c *Client) runOnce() error {
 		if ar.AuthResult != nil {
 			msg = ar.AuthResult.Message
 		}
-		return fmt.Errorf("auth failed: %s", msg)
+		log.Printf("authentication rejected: %s", msg)
+		return errAuthFailed
 	}
 	log.Printf("authenticated as %s (id=%s)", c.cfg.Name, c.cfg.AgentID)
 
