@@ -43,6 +43,9 @@ input:focus { border-color: var(--accent); }
 .btn:hover { opacity: .9; }
 .btn:disabled { opacity: .5; cursor: wait; }
 .err { color: var(--red); font-size: 13px; margin-top: 12px; min-height: 18px; }
+@media (max-width: 480px) {
+  .card { padding: 28px 20px; width: 100%; border-radius: 0; border: none; }
+}
 </style>
 </head>
 <body>
