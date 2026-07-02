@@ -1,10 +1,10 @@
 :root {
   --bg: #0b1220;
   --bg-grad: radial-gradient(ellipse 90% 50% at 50% -10%, #16213a 0%, transparent 70%);
-  --panel: #111827;
-  --panel-hover: #1c2435;
-  --border: #243044;
-  --border-hover: #38496a;
+  --panel: #1a2438;
+  --panel-hover: #222f48;
+  --border: #2d3b55;
+  --border-hover: #4a6088;
   --text: #e2e8f0;
   --muted: #7c8aa5;
   --accent: #3b82f6;
@@ -14,7 +14,7 @@
   --red: #ef4444;
   --purple: #a855f7;
   --radius: 10px;
-  --shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 * { box-sizing: border-box; }
 body {
@@ -119,7 +119,7 @@ main { padding: 24px 28px; max-width: 1600px; margin: 0 auto; }
   .card:hover {
     border-color: var(--border-hover);
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    box-shadow: 0 8px 28px rgba(59,130,246,0.15), 0 4px 12px rgba(0,0,0,0.5);
   }
 }
 .card .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
