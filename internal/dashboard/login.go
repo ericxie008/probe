@@ -9,15 +9,15 @@ const loginHTML = `<!DOCTYPE html>
 <title>探针 · 登录</title>
 <style>
 :root {
-  --bg: #0f1c3c; --bg-grad: radial-gradient(ellipse 90% 50% at 50% -10%, #1a3060 0%, transparent 70%);
-  --panel: rgba(25,45,80,0.65); --border: #254b87;
-  --text: #f0f7ff; --muted: #94b3d8; --accent: #4d8ff0; --red: #f87171;
+  --bg: #f8fafc; --bg-grad: none;
+  --panel: #ffffff; --border: #e2e8f0;
+  --text: #1e293b; --muted: #64748b; --accent: #2563eb; --red: #f87171;
   --green: #34d399;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  background: var(--bg); background-image: var(--bg-grad); background-attachment: fixed;
+  background: var(--bg); 
   color: var(--text); min-height: 100vh;
   display: flex; align-items: center; justify-content: center;
 }
@@ -26,7 +26,7 @@ body {
   padding: 36px 32px; width: 340px; max-width: 90vw;
 }
 .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; font-size: 18px; font-weight: 600; }
-.brand .dot { width: 10px; height: 10px; border-radius: 50%; background: #34d399; box-shadow: 0 0 8px #34d399; }
+.brand .dot { width: 10px; height: 10px; border-radius: 50%; background: #16a34a; box-shadow: 0 0 8px #16a34a; }
 .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
 label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
 input {
