@@ -108,23 +108,39 @@ func displayHost(addr string) string {
 
 func safeStatic(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		setSecurityHeaders(w, r)
 		// Reject path traversal attempts explicitly. Go's http.FileServer
 		// already cleans paths internally, but this adds a second layer
 		// for defence-in-depth (e.g. behind proxies that decode %2e).
 		cleaned := path.Clean(r.URL.Path)
 		if cleaned != r.URL.Path && cleaned != r.URL.Path+"/" {
-			// path.Clean normalises "a/../b" to "b"; if the result differs
-			// it means the original had traversable segments.
 			if strings.Contains(r.URL.Path, "..") {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
 			}
 		}
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Referrer-Policy", "no-referrer")
 		h.ServeHTTP(w, r)
 	})
+}
+
+// setSecurityHeaders applies CSP, HSTS, and other protective headers.
+// CSP allows only self-origin scripts/styles plus the Chart.js CDN;
+// HSTS is only set when the connection is over TLS.
+func setSecurityHeaders(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Security-Policy",
+		"default-src 'self'; "+
+			"script-src 'self' https://cdn.jsdelivr.net; "+
+			"style-src 'self' 'unsafe-inline'; "+
+			"img-src 'self' data:; "+
+			"connect-src 'self' wss: ws:; "+
+			"font-src 'self'; "+
+			"object-src 'none'; base-uri 'self'")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	if r.TLS != nil {
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+	}
 }
 
 func env(k, d string) string {

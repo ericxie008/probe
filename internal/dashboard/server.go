@@ -52,6 +52,30 @@ func checkOrigin(r *http.Request) bool {
 	return false
 }
 
+// checkCSRF verifies that POST requests originate from a same-origin
+// browser. Since all state-changing operations (rename, delete) are POST,
+// this blocks cross-site form submissions even if SameSite is bypassed.
+// It reuses the same origin-matching logic as checkOrigin.
+func checkCSRF(r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		return true // only enforce on POST
+	}
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return false // browser always sends Origin on cross-origin POST
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	originHost := u.Hostname()
+	hostName := r.Host
+	if h, _, err := net.SplitHostPort(hostName); err == nil {
+		hostName = h
+	}
+	return originHost == hostName && originHost != ""
+}
+
 // Server wires the hub, store, and HTTP routes together.
 type Server struct {
 	hub        *Hub
@@ -239,15 +263,21 @@ func (s *Server) recordLoginOK(ip string) {
 }
 
 func clientIP(r *http.Request) string {
-	// respect X-Forwarded-For from a trusted reverse proxy
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return strings.TrimSpace(strings.Split(xff, ",")[0])
-	}
+	// Only trust X-Forwarded-For when behind a proxy (localhost remote
+	// addr indicates a reverse proxy forwarded the request). Without a
+	// proxy, X-Forwarded-For is client-controlled and must be ignored
+	// to prevent spoofed-IP bypass of login rate limiting.
 	host := r.RemoteAddr
+	hostOnly := host
 	if i := strings.LastIndex(host, ":"); i > 0 {
-		host = host[:i]
+		hostOnly = host[:i]
 	}
-	return host
+	if hostOnly == "127.0.0.1" || hostOnly == "::1" || hostOnly == "[::1]" {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			return strings.TrimSpace(strings.Split(xff, ",")[0])
+		}
+	}
+	return hostOnly
 }
 
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
@@ -392,6 +422,10 @@ func (s *Server) handleServerDetail(w http.ResponseWriter, r *http.Request) {
 
 	// POST /api/servers/{id}/delete
 	if rest == "delete" && r.Method == http.MethodPost {
+		if !checkCSRF(r) {
+			http.Error(w, "cross-site request blocked", http.StatusForbidden)
+			return
+		}
 		if err := s.store.Delete(detailID); err != nil {
 			http.Error(w, "delete failed", http.StatusInternalServerError)
 			return
@@ -403,6 +437,10 @@ func (s *Server) handleServerDetail(w http.ResponseWriter, r *http.Request) {
 
 	// POST /api/servers/{id}/rename
 	if rest == "rename" && r.Method == http.MethodPost {
+		if !checkCSRF(r) {
+			http.Error(w, "cross-site request blocked", http.StatusForbidden)
+			return
+		}
 		var body struct {
 			Name string `json:"name"`
 		}

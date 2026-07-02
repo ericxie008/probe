@@ -9,13 +9,16 @@ const loginHTML = `<!DOCTYPE html>
 <title>探针 · 登录</title>
 <style>
 :root {
-  --bg: #0d1117; --panel: #161b22; --border: #30363d;
-  --text: #e6edf3; --muted: #8b949e; --accent: #2f81f7; --red: #f85149;
+  --bg: #0f1117; --bg-grad: radial-gradient(ellipse 90% 60% at 50% -10%, #1b2030 0%, transparent 70%);
+  --panel: #181c25; --border: #2a3040;
+  --text: #cdd5e0; --muted: #7a8599; --accent: #5b8def; --red: #f87171;
+  --green: #4ade80;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  background: var(--bg); color: var(--text); min-height: 100vh;
+  background: var(--bg); background-image: var(--bg-grad); background-attachment: fixed;
+  color: var(--text); min-height: 100vh;
   display: flex; align-items: center; justify-content: center;
 }
 .card {

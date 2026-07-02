@@ -136,10 +136,10 @@ function card(s) {
   const memP = fmt.pct(s.memory_used, s.memory_total);
   const cpuP = fmt.pct(s.cpu_usage, 100);
   const diskP = fmt.pct(s.disk_used, s.disk_total);
-  return `<div class="card${online ? "" : " offline-card"}" data-id="${s.agent_id}">
+  return `<div class="card${online ? "" : " offline-card"}" data-id="${esc(s.agent_id)}">
     <div class="head">
       <div>
-        <div class="name-row"><span class="name">${esc(s.name)}</span><button class="edit-btn-sm" data-rename="${s.agent_id}" title="修改名称">✎</button>${online ? "" : `<button class="edit-btn-sm del-btn" data-del="${s.agent_id}" title="删除此记录">✕</button>`}</div>
+        <div class="name-row"><span class="name">${esc(s.name)}</span><button class="edit-btn-sm" data-rename="${esc(s.agent_id)}" title="修改名称">✎</button>${online ? "" : `<button class="edit-btn-sm del-btn" data-del="${esc(s.agent_id)}" title="删除此记录">✕</button>`}</div>
         <div class="os">${esc(s.os||"")} · ${s.cpu_count||"?"} 核 · ${esc(s.arch||"")}</div>
       </div>
       <span class="status ${online ? "online" : "offline"}">${online ? "在线" : "离线"}</span>
@@ -250,9 +250,9 @@ function initCharts() {
     if (charts[selected].net) charts[selected].net.destroy();
   }
   charts[selected] = {
-    cpu: makeChart("cpuChart", [{c:"#2f81f7",label:"CPU"}], 100),
-    mem: makeChart("memChart", [{c:"#a371f7",label:"内存"}], 100),
-    net: makeChart("netChart", [{c:"#3fb950",label:"↓"}, {c:"#d29922",label:"↑"}], 0, true),
+    cpu: makeChart("cpuChart", [{c:"#5b8def",label:"CPU"}], 100),
+    mem: makeChart("memChart", [{c:"#c084fc",label:"内存"}], 100),
+    net: makeChart("netChart", [{c:"#4ade80",label:"↓"}, {c:"#facc15",label:"↑"}], 0, true),
   };
 }
 function makeChart(id, colors, max, rate) {
@@ -260,11 +260,11 @@ function makeChart(id, colors, max, rate) {
   if (!ctx) return null;
   let yScale;
   if (max) {
-    yScale = { min: 0, max: max, ticks: { color: "#8b949e" }, grid: { color: "#21262d" } };
+    yScale = { min: 0, max: max, ticks: { color: "#7a8599" }, grid: { color: "#2a3040" } };
   } else if (rate) {
-    yScale = { beginAtZero: true, ticks: { color: "#8b949e", callback: function(v) { return fmt.rate(v); } }, grid: { color: "#21262d" } };
+    yScale = { beginAtZero: true, ticks: { color: "#8b949e", callback: function(v) { return fmt.rate(v); } }, grid: { color: "#2a3040" } };
   } else {
-    yScale = { beginAtZero: true, ticks: { color: "#8b949e" }, grid: { color: "#21262d" } };
+    yScale = { beginAtZero: true, ticks: { color: "#7a8599" }, grid: { color: "#2a3040" } };
   }
   return new Chart(ctx, {
     type: "line",
