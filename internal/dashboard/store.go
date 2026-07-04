@@ -41,8 +41,28 @@ func NewStore(path string) (*Store, error) {
 	// Auto-migrate: add columns that may not exist in older databases.
 	for _, col := range []struct{ tbl, col, typ string }{
 		{"servers", "override_name", "TEXT"},
+		{"servers", "sort_order", "INTEGER DEFAULT 0"},
 	} {
 		db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, col.tbl, col.col, col.typ))
+	}
+	// Backfill sort_order for rows that predate the column (all 0).
+	// Assign sequential values in name order so the initial display is
+	// stable and matches the previous name-sorted behaviour.
+	var needBackfill int
+	_ = db.QueryRow(`SELECT COUNT(*) FROM servers WHERE sort_order = 0`).Scan(&needBackfill)
+	if needBackfill > 0 {
+		brows, _ := db.Query(`SELECT id FROM servers ORDER BY COALESCE(override_name,name), first_seen`)
+		var bids []string
+		for brows.Next() {
+			var bid string
+			if brows.Scan(&bid) == nil {
+				bids = append(bids, bid)
+			}
+		}
+		brows.Close()
+		for i, bid := range bids {
+			db.Exec(`UPDATE servers SET sort_order = ? WHERE id = ?`, i+1, bid)
+		}
 	}
 	// Load deleted set and override names from SQLite (survives restarts)
 	deleted := make(map[string]struct{})
@@ -120,7 +140,8 @@ func (s *Store) RememberAgent(id, name string) {
 	s.known[id] = name
 	s.mu.Unlock()
 	_, _ = s.db.Exec(
-		`INSERT INTO servers(id,name,first_seen) VALUES(?,?,?)
+		`INSERT INTO servers(id,name,first_seen,sort_order)
+		 VALUES(?,?,?,COALESCE((SELECT MAX(sort_order) FROM servers),0)+1)
 		 ON CONFLICT(id) DO UPDATE SET name=excluded.name`,
 		id, name, time.Now().Unix(),
 	)
@@ -211,10 +232,11 @@ type ServerMeta struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	FirstSeen int64  `json:"first_seen"`
+	SortOrder int    `json:"sort_order"`
 }
 
 func (s *Store) Servers() []ServerMeta {
-	rows, err := s.db.Query(`SELECT id,COALESCE(override_name,name),first_seen FROM servers ORDER BY name`)
+	rows, err := s.db.Query(`SELECT id,COALESCE(override_name,name),first_seen,sort_order FROM servers ORDER BY sort_order, COALESCE(override_name,name)`)
 	if err != nil {
 		return nil
 	}
@@ -222,11 +244,29 @@ func (s *Store) Servers() []ServerMeta {
 	var out []ServerMeta
 	for rows.Next() {
 		var m ServerMeta
-		if err := rows.Scan(&m.ID, &m.Name, &m.FirstSeen); err == nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.FirstSeen, &m.SortOrder); err == nil {
 			out = append(out, m)
 		}
 	}
 	return out
+}
+
+// Reorder sets a sequential manual sort order for the given agent IDs.
+// IDs are persisted in the order provided; any agent not in the list
+// keeps its existing (higher) position. This is the backing store for
+// drag-to-reorder in the UI.
+func (s *Store) Reorder(ids []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for i, id := range ids {
+		if _, err := tx.Exec(`UPDATE servers SET sort_order = ? WHERE id = ?`, i+1, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // Rename sets a display-name override for an agent. This takes precedence over

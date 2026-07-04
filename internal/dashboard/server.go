@@ -113,6 +113,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/agent", s.handleAgentWS)
 	s.mux.HandleFunc("/ws", s.gateWeb(s.handleViewerWS))
 	s.mux.HandleFunc("/api/servers", s.gateWeb(s.handleServers))
+	s.mux.HandleFunc("/api/servers/reorder", s.gateWeb(s.handleReorder))
 	s.mux.HandleFunc("/api/servers/", s.gateWeb(s.handleServerDetail))
 	s.mux.HandleFunc("/api/deploy", s.gateWeb(s.handleDeploy))
 }
@@ -384,6 +385,40 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// POST /api/servers/reorder -> persist a manual sort order.
+// Body: {"ids": ["agent-id-1", "agent-id-2", ...]} in the desired order.
+func (s *Server) handleReorder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !checkCSRF(r) {
+		http.Error(w, "cross-site request blocked", http.StatusForbidden)
+		return
+	}
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if len(body.IDs) == 0 {
+		http.Error(w, "ids required", http.StatusBadRequest)
+		return
+	}
+	if len(body.IDs) > 10000 {
+		http.Error(w, "too many ids", http.StatusBadRequest)
+		return
+	}
+	if err := s.store.Reorder(body.IDs); err != nil {
+		http.Error(w, "reorder failed", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
+}
+
 // GET /api/servers -> all known servers with latest state.
 func (s *Server) handleServers(w http.ResponseWriter, r *http.Request) {
 	servers := s.store.Servers()
@@ -522,6 +557,10 @@ func (s *Server) APIHandler() http.HandlerFunc {
 		}
 		if r.URL.Path == "/api/servers" {
 			s.handleServers(w, r)
+			return
+		}
+		if r.URL.Path == "/api/servers/reorder" {
+			s.handleReorder(w, r)
 			return
 		}
 		if len(r.URL.Path) > len("/api/servers/") && r.URL.Path[:len("/api/servers/")] == "/api/servers/" {

@@ -1,12 +1,66 @@
 package dashboard
 
 import (
+	"path/filepath"
+	"reflect"
+	"testing"
+	"time"
+
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"testing"
-	"time"
 )
+
+// ---- Store.Reorder / sort_order ----
+
+func serverIDs(metas []ServerMeta) []string {
+	out := make([]string, len(metas))
+	for i, m := range metas {
+		out[i] = m.ID
+	}
+	return out
+}
+
+func TestReorder(t *testing.T) {
+	s, err := NewStore(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	s.RememberAgent("a", "Alpha")
+	s.RememberAgent("b", "Bravo")
+	s.RememberAgent("c", "Charlie")
+
+	// New agents get sort_order MAX+1, so they appear in insertion order.
+	got := serverIDs(s.Servers())
+	if want := []string{"a", "b", "c"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("initial order = %v, want %v", got, want)
+	}
+
+	// Reorder to c, a, b and verify persistence.
+	if err := s.Reorder([]string{"c", "a", "b"}); err != nil {
+		t.Fatalf("Reorder: %v", err)
+	}
+	got = serverIDs(s.Servers())
+	if want := []string{"c", "a", "b"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("after reorder = %v, want %v", got, want)
+	}
+
+	// A reconnecting agent keeps its position (name refresh, no reorder).
+	s.RememberAgent("a", "Alpha-Renamed")
+	got = serverIDs(s.Servers())
+	if want := []string{"c", "a", "b"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("after reconnect = %v, want %v", got, want)
+	}
+
+	// A brand-new agent lands at the end.
+	s.RememberAgent("d", "Delta")
+	got = serverIDs(s.Servers())
+	if want := []string{"c", "a", "b", "d"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("after new agent = %v, want %v", got, want)
+	}
+}
 
 // ---- checkOrigin ----
 

@@ -162,6 +162,19 @@ main { padding: 24px 28px; max-width: 1600px; margin: 0 auto; }
 /* ===== Offline card ===== */
 .offline-card { opacity: 0.5; }
 
+/* ===== Drag-to-reorder (手动排序) ===== */
+.card[draggable="true"] { cursor: grab; }
+.card[draggable="true"]:active { cursor: grabbing; }
+.card.dragging { opacity: 0.35; transform: scale(0.99); }
+.card.drag-over {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent), 0 8px 28px rgba(59,130,246,0.25);
+}
+@media (hover: none) {
+  /* 触屏设备无法原生拖拽,改回指针光标避免误导 */
+  .card[draggable="true"] { cursor: pointer; }
+}
+
 /* ===== Empty ===== */
 .empty { text-align: center; color: var(--muted); padding: 80px 0; }
 .spin {

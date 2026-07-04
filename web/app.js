@@ -5,9 +5,11 @@ let selected = null;    // current agentID in detail view
 let ws = null;
 const charts = {};      // agentID -> {cpu, mem, net}
 let overrideNames = {}; // 本地缓存改名,防止 WS 推送覆盖
-let sortKey = "status"; // 排序字段: status|name|cpu|mem|disk|net
+let sortKey = "manual"; // 排序字段: manual|status|name|cpu|mem|disk|net(默认手动)
 let sortDir = -1;       // -1=降序(高优先), 1=升序
 let renderTimer = null;  // 渲染节流
+let manualOrder = [];    // 服务器手动排序的 id 顺序(来自 /api/servers)
+let dragSrcId = null;    // 正在拖拽的服务器 id
 
 const fmt = {
   bytes(n) {
@@ -55,6 +57,7 @@ function connect() {
     if (msg.type === "state") {
       if (overrideNames[msg.data.agent_id]) msg.data.name = overrideNames[msg.data.agent_id];
       states[msg.data.agent_id] = msg.data;
+      if (!manualOrder.includes(msg.data.agent_id)) manualOrder.push(msg.data.agent_id);
       if (selected === msg.data.agent_id) updateDetail();
       else if (!selected) {
         // 节流:100ms 内多次更新只渲染一次,减少 DOM 操作
@@ -67,6 +70,12 @@ function connect() {
 
 // ---------- 排序 ----------
 function sortedIds() {
+  if (sortKey === "manual") {
+    // 按服务端持久化的顺序;未知(刚连上)的排到末尾
+    const order = manualOrder.slice();
+    for (const id of Object.keys(states)) if (!order.includes(id)) order.push(id);
+    return order.filter(id => states[id]);
+  }
   const ids = Object.keys(states);
   const val = (s) => {
     switch (sortKey) {
@@ -88,6 +97,7 @@ function sortedIds() {
 }
 
 function setSort(key) {
+  if (key === "manual") { sortKey = "manual"; renderList(); return; }
   if (sortKey === key) { sortDir *= -1; }
   else { sortKey = key; sortDir = (key === "name") ? 1 : -1; }
   renderList();
@@ -115,10 +125,10 @@ function renderList() {
     return;
   }
   let html = '<main><div class="toolbar">';
-  const opts = [["status","状态"],["name","名称"],["cpu","CPU"],["mem","内存"],["disk","磁盘"],["net","流量"]];
+  const opts = [["manual","手动"],["status","状态"],["name","名称"],["cpu","CPU"],["mem","内存"],["disk","磁盘"],["net","流量"]];
   for (const [k, label] of opts) {
     const active = sortKey === k;
-    const arrow = active ? (sortDir === 1 ? " ↑" : " ↓") : "";
+    const arrow = active && k !== "manual" ? (sortDir === 1 ? " ↑" : " ↓") : "";
     html += `<button class="sort-btn${active ? " active" : ""}" data-sort="${k}">${label}${arrow}</button>`;
   }
   html += '</div><div class="grid">';
@@ -142,12 +152,79 @@ app.addEventListener("click", (e) => {
   if (card) { location.hash = "/" + card.dataset.id; }
 });
 
+// ---------- 拖拽排序(手动模式) ----------
+// 用事件委托挂一次,跨 renderList() 重新渲染仍然有效。
+// dragstart 仅在卡片 draggable=true(即手动模式)时触发。
+app.addEventListener("dragstart", (e) => {
+  const card = e.target.closest(".card");
+  if (!card) return;
+  dragSrcId = card.dataset.id;
+  card.classList.add("dragging");
+  e.dataTransfer.effectAllowed = "move";
+  // Firefox 需要 setData 才能触发拖拽
+  try { e.dataTransfer.setData("text/plain", dragSrcId); } catch (_) {}
+});
+app.addEventListener("dragend", (e) => {
+  const card = e.target.closest(".card");
+  if (card) card.classList.remove("dragging");
+  app.querySelectorAll(".card.drag-over").forEach(c => c.classList.remove("drag-over"));
+  dragSrcId = null;
+});
+app.addEventListener("dragover", (e) => {
+  if (sortKey !== "manual" || !dragSrcId) return;
+  const card = e.target.closest(".card");
+  if (!card || card.dataset.id === dragSrcId) return;
+  e.preventDefault(); // 允许 drop
+  e.dataTransfer.dropEffect = "move";
+  card.classList.add("drag-over");
+});
+app.addEventListener("dragleave", (e) => {
+  const card = e.target.closest(".card");
+  if (card) card.classList.remove("drag-over");
+});
+app.addEventListener("drop", (e) => {
+  if (sortKey !== "manual" || !dragSrcId) return;
+  const card = e.target.closest(".card");
+  if (!card) return;
+  e.preventDefault();
+  card.classList.remove("drag-over");
+  const targetId = card.dataset.id;
+  if (!targetId || targetId === dragSrcId) return;
+  // 鼠标在卡片上半部 -> 插到目标前,下半部 -> 插到目标后
+  const rect = card.getBoundingClientRect();
+  moveCard(dragSrcId, targetId, (e.clientY - rect.top) > rect.height / 2);
+});
+
+// 把 srcId 移动到 targetId 之前(或之后),更新顺序并持久化。
+function moveCard(srcId, targetId, after) {
+  const ids = sortedIds();
+  const without = ids.filter(id => id !== srcId);
+  let idx = without.indexOf(targetId);
+  if (idx < 0) idx = without.length;
+  if (after) idx++;
+  without.splice(idx, 0, srcId);
+  manualOrder = without;
+  saveOrder(manualOrder);
+  renderList();
+}
+
+async function saveOrder(ids) {
+  try {
+    await fetch("/api/servers/reorder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+  } catch (e) {}
+}
+
 function card(s) {
   const online = isOnline(s);
   const memP = fmt.pct(s.memory_used, s.memory_total);
   const cpuP = fmt.pct(s.cpu_usage, 100);
   const diskP = fmt.pct(s.disk_used, s.disk_total);
-  return `<div class="card${online ? "" : " offline-card"}" data-id="${esc(s.agent_id)}">
+  const draggable = sortKey === "manual" ? ' draggable="true"' : "";
+  return `<div class="card${online ? "" : " offline-card"}" data-id="${esc(s.agent_id)}"${draggable}>
     <div class="head">
       <div>
         <div class="name-row"><span class="name">${esc(s.name)}</span><button class="edit-btn-sm" data-rename="${esc(s.agent_id)}" title="修改名称">✎</button>${online ? "" : `<button class="edit-btn-sm del-btn" data-del="${esc(s.agent_id)}" title="删除此记录">✕</button>`}</div>
@@ -343,6 +420,7 @@ async function deleteAgent(id) {
     const r = await fetch(`/api/servers/${encodeURIComponent(id)}/delete`, { method: "POST" });
     if (r.ok) {
       delete states[id];
+      manualOrder = manualOrder.filter(x => x !== id);
       renderList();
     } else { alert("删除失败: " + r.status); }
   } catch (e) { alert("网络错误"); }
@@ -570,6 +648,7 @@ async function initServers() {
     const r = await fetch("/api/servers");
     const list = await r.json();
     if (Array.isArray(list)) {
+      manualOrder = list.map(s => s.id);
       for (const s of list) {
         if (s.name) overrideNames[s.id] = s.name;
         // 构造一个最小 state 放进列表;WS 推送的实时数据会随后覆盖。
