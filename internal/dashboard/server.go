@@ -80,7 +80,6 @@ func checkCSRF(r *http.Request) bool {
 type Server struct {
 	hub        *Hub
 	store      *Store
-	mux        *http.ServeMux
 	webToken   string
 	secret     string
 	listenAddr string
@@ -100,22 +99,12 @@ type loginBucket struct {
 // NewServer builds a Server backed by the given store/hub.
 func NewServer(store *Store, hub *Hub, webToken, secret, listenAddr string) *Server {
 	s := &Server{
-		hub: hub, store: store, mux: http.NewServeMux(),
+		hub: hub, store: store,
 		webToken: webToken, secret: secret, listenAddr: listenAddr,
 		sessions:   make(map[string]time.Time),
 		loginFails: make(map[string]*loginBucket),
 	}
-	s.routes()
 	return s
-}
-
-func (s *Server) routes() {
-	s.mux.HandleFunc("/agent", s.handleAgentWS)
-	s.mux.HandleFunc("/ws", s.gateWeb(s.handleViewerWS))
-	s.mux.HandleFunc("/api/servers", s.gateWeb(s.handleServers))
-	s.mux.HandleFunc("/api/servers/reorder", s.gateWeb(s.handleReorder))
-	s.mux.HandleFunc("/api/servers/", s.gateWeb(s.handleServerDetail))
-	s.mux.HandleFunc("/api/deploy", s.gateWeb(s.handleDeploy))
 }
 
 func (s *Server) LoginPageHandler() http.HandlerFunc { return s.handleLoginPage }

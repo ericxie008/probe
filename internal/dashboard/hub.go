@@ -95,6 +95,14 @@ func (h *Hub) HandleAgent(ws *websocket.Conn) {
 	_ = writeMsg(ws, proto.Message{Type: proto.MsgAuthResult, AuthResult: &proto.AuthResult{OK: true}})
 	// Authenticated from here on: no more read deadline.
 	_ = ws.SetReadDeadline(time.Time{})
+	// Each pong refreshes the read deadline so a silently-dropped
+	// connection (agent host suspended, NAT entry expired) is detected
+	// instead of lingering as a registered agent.
+	ws.SetPongHandler(func(string) error {
+		_ = ws.SetReadDeadline(time.Now().Add(90 * time.Second))
+		return nil
+	})
+	_ = ws.SetReadDeadline(time.Now().Add(90 * time.Second))
 
 	h.mu.Lock()
 	h.agents[ac.id] = ac
@@ -111,11 +119,20 @@ func (h *Hub) HandleAgent(ws *websocket.Conn) {
 		ws.Close()
 	}()
 
+	// Ping the agent every 30s to refresh its read deadline via pong.
+	go func() {
+		ping := time.NewTicker(30 * time.Second)
+		defer ping.Stop()
+		for range ping.C {
+			_ = ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := ws.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		}
+	}()
+
 	// Reader loop: the only message type we act on is state.
 	for {
-		// Reset a generous read deadline each iteration; the agent sends
-		// state every few seconds, so 5 minutes of silence means it's dead.
-		_ = ws.SetReadDeadline(time.Now().Add(5 * time.Minute))
 		var msg proto.Message
 		if err := readMsg(ws, &msg); err != nil {
 			log.Printf("agent %s read: %v", ac.id, err)
@@ -155,7 +172,25 @@ func (h *Hub) HandleViewer(ws *websocket.Conn) {
 
 	go func() {
 		for b := range vc.send {
+			// Set a write deadline so a stalled network (Wi-Fi silent
+			// disconnect, NAT timeout) can't block this goroutine
+			// forever. A failed write unblocks range and lets the
+			// deferred cleanup close the connection.
+			_ = ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := ws.WriteMessage(websocket.TextMessage, b); err != nil {
+				return
+			}
+		}
+	}()
+
+	// Periodic ping keeps the viewer's read deadline fresh and probes
+	// liveness even when there are no state updates to push.
+	go func() {
+		ping := time.NewTicker(30 * time.Second)
+		defer ping.Stop()
+		for range ping.C {
+			_ = ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := ws.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
 		}
@@ -172,7 +207,6 @@ func (h *Hub) HandleViewer(ws *websocket.Conn) {
 
 	// Keep reading only to detect disconnects; the browser sends nothing.
 	for {
-		_ = ws.SetReadDeadline(time.Now().Add(2 * time.Minute))
 		if _, _, err := ws.ReadMessage(); err != nil {
 			return
 		}

@@ -338,7 +338,8 @@ func isVirtualIface(name string) bool {
 		return true
 	}
 	prefixes := []string{"docker", "veth", "br-", "tun", "tap", "virbr",
-		"vnet", "wg", "utun", "fw", "ifb"}
+		"vnet", "wg", "utun", "fw", "ifb",
+		"ppp", "sit", "ip6tnl", "ovs-system"}
 	lower := strings.ToLower(name)
 	for _, p := range prefixes {
 		if strings.HasPrefix(lower, p) {

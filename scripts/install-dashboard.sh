@@ -14,8 +14,8 @@ INSTALL_DIR="/opt/probe"
 SERVICE_FILE="/etc/systemd/system/probe-dashboard.service"
 DATA_DIR="$INSTALL_DIR/data"
 ENV_FILE="/opt/probe/probe.env"
-GOVERSION="1.23.4"
-GOMIN="1.22"          # 与 go.mod 的 go 指令保持一致
+GOVERSION="1.25.0"
+GOMIN="1.23"          # 与 go.mod 的 go 指令保持一致
 # 期望校验和(Go 官方发布的 SHA256,形如 64 字符 hex)
 # 留空则跳过校验(不推荐),填入官方公布的值即可启用完整性校验。
 GO_SHA256_AMD64=""

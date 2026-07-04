@@ -4,8 +4,8 @@ set -euo pipefail
 
 INSTALL_DIR="/opt/probe-agent"
 ENV_FILE="/opt/probe-agent/probe.env"
-GOVERSION="1.23.4"
-GOMIN="1.22"
+GOVERSION="1.25.0"
+GOMIN="1.23"
 # Go 官方 SHA256(留空则跳过校验,建议从 https://go.dev/dl/ 填入)
 GO_SHA256_AMD64=""
 GO_SHA256_ARM64=""

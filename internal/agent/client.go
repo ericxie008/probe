@@ -138,6 +138,14 @@ func (c *Client) runOnce() error {
 
 	// drainLoop keeps reading so we notice when the connection drops; the
 	// server only sends the initial auth result and otherwise pushes nothing.
+	// We set a Pong handler + read deadline so a silently-dropped connection
+	// (NAT timeout, suspended host) is detected within the deadline window
+	// instead of blocking indefinitely until the next TCP RST.
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(90 * time.Second))
+		return nil
+	})
+	_ = conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -153,6 +161,10 @@ func (c *Client) runOnce() error {
 
 	ticker := time.NewTicker(c.cfg.Interval)
 	defer ticker.Stop()
+	// Send a WebSocket Ping every 30s to keep NAT entries warm and to
+	// refresh the server's read deadline via the pong round-trip.
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
 	for {
 		select {
 		case <-ticker.C:
@@ -162,6 +174,11 @@ func (c *Client) runOnce() error {
 			}
 		case <-done:
 			return nil
+		case <-pingTicker.C:
+			_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return fmt.Errorf("ping send: %w", err)
+			}
 		}
 	}
 }
@@ -206,10 +223,25 @@ func loadOrCreateID() string {
 				return id
 			}
 		}
-		// try to create it here
+	}
+	// No existing ID found in any candidate dir: create one in the first
+	// writable location. Scanning all dirs first avoids creating a
+	// duplicate ID in an early dir when a valid one exists in a later dir.
+	for _, dir := range []string{
+		os.Getenv("PROBE_DATA_DIR"),
+		filepath.Dir(os.Args[0]),
+		".",
+		"/var/lib/probe-agent",
+		"/opt/probe-agent",
+	} {
+		if dir == "" {
+			continue
+		}
+		p := filepath.Join(dir, "agent.id")
 		if id := uuid.NewString(); os.WriteFile(p, []byte(id), 0600) == nil {
 			return id
 		}
 	}
+	// Last resort: nothing writable, return an ephemeral ID.
 	return uuid.NewString()
 }

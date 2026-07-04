@@ -108,11 +108,26 @@ function route() {
   // Cancel any pending list re-render so it can't overwrite the
   // detail view or the card click handlers we're navigating away from.
   if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
+  // 离开详情页时销毁所有 Chart 实例,避免切换多个服务器时内存泄漏。
+  destroyAllCharts();
   const id = location.hash.replace("#/", "");
   if (id && states[id]) { selected = id; renderDetail(); }
   else { selected = null; renderList(); }
 }
 window.addEventListener("hashchange", route);
+
+// 销毁 charts 对象里所有 Chart 实例并清空。Chart.js 实例持有一个 canvas
+// 监听器和一个 requestAnimationFrame 句柄,不显式 destroy 会一直留在内存里。
+// initCharts() 只重建 charts[selected],之前浏览过的服务器图表无人回收。
+function destroyAllCharts() {
+  for (const id in charts) {
+    const c = charts[id];
+    if (c.cpu) c.cpu.destroy();
+    if (c.mem) c.mem.destroy();
+    if (c.net) c.net.destroy();
+  }
+  for (const id in charts) delete charts[id];
+}
 
 // ---------- 列表 ----------
 function renderList() {
@@ -457,7 +472,9 @@ let deployCmds = {};
 async function showDeploy() {
   // 密钥从管理员本地输入获取(不通过 API 传输,防泄露)
   if (!deploySecret) {
-    deploySecret = localStorage.getItem("deploy_secret") || "";
+    // 用 sessionStorage 而非 localStorage: 关闭标签页即清除,减少密钥在
+    // 浏览器持久存储中残留的时间窗口。
+    deploySecret = sessionStorage.getItem("deploy_secret") || "";
   }
   // 如果没存过,从 API 拿打码版本用于显示提示
   let maskedSecret = "";
@@ -602,7 +619,7 @@ async function showDeploy() {
 function saveSecret() {
   const v = document.getElementById("secretInput").value.trim();
   deploySecret = v;
-  localStorage.setItem("deploy_secret", v);
+  sessionStorage.setItem("deploy_secret", v);
   document.getElementById("deployModal").remove();
   showDeploy();
 }
