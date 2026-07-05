@@ -51,7 +51,9 @@ function connect() {
     const msg = JSON.parse(ev.data);
     if (msg.type === "state") {
       if (overrideNames[msg.data.agent_id]) msg.data.name = overrideNames[msg.data.agent_id];
-      msg.data.online = !!msg.online; // 服务器权威在线标志,避免设备时钟 skew
+      // 仅当服务器确实推送了 online 字段(新二进制)时才采用;旧二进制不带该字段,
+      // 这时留空,isOnline() 会回退到时间戳判断,避免被误置为 false 导致全离线。
+      if (typeof msg.online === "boolean") msg.data.online = msg.online;
       states[msg.data.agent_id] = msg.data;
       if (!manualOrder.includes(msg.data.agent_id)) manualOrder.push(msg.data.agent_id);
       if (selected === msg.data.agent_id) updateDetail();
