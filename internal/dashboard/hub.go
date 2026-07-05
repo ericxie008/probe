@@ -15,8 +15,27 @@ import (
 // stateMsg is a typed JSON wrapper for broadcasting state to browsers.
 // Using a struct avoids map[string]any reflection on every serialisation.
 type stateMsg struct {
-	Type string       `json:"type"`
-	Data *proto.State `json:"data"`
+	Type   string       `json:"type"`
+	Online bool         `json:"online"`
+	Data   *proto.State `json:"data"`
+}
+
+// onlineThresholdSec is how recently an agent must have reported to count
+// as online. Shared by the HTTP API and the live WS push so the two never
+// disagree. The agent reports every ~3s, so 30s is ~10 missed reports -
+// comfortably past jitter, tight enough to flag real outages quickly.
+const onlineThresholdSec = 30
+
+// marshalState serialises a state for a browser push, attaching a
+// server-authoritative online flag. Computing online here (rather than in
+// the browser) removes client/server clock skew: the browser used to do
+// Date.now() - s.timestamp, which flickered when the device clock drifted
+// relative to the server (notably iPhones whose clock differs from the
+// server by tens of seconds).
+func marshalState(st *proto.State) []byte {
+	online := st != nil && time.Now().Unix()-st.Timestamp < onlineThresholdSec
+	b, _ := json.Marshal(stateMsg{Type: "state", Online: online, Data: st})
+	return b
 }
 
 // Hub owns all agent connections and browser connections. Agents are
@@ -198,7 +217,7 @@ func (h *Hub) HandleViewer(ws *websocket.Conn) {
 
 	// Send a snapshot of current states immediately on connect.
 	for _, st := range h.store.Latest() {
-		b, _ := json.Marshal(stateMsg{Type: "state", Data: st})
+		b := marshalState(st)
 		select {
 		case vc.send <- b:
 		default:
@@ -215,7 +234,7 @@ func (h *Hub) HandleViewer(ws *websocket.Conn) {
 
 // broadcast pushes a state to every connected browser.
 func (h *Hub) broadcast(st *proto.State) {
-	b, _ := json.Marshal(stateMsg{Type: "state", Data: st})
+	b := marshalState(st)
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for vc := range h.viewers {

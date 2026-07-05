@@ -154,7 +154,7 @@ func redirectStripToken(w http.ResponseWriter, r *http.Request) {
 	q.Del("token")
 	u := *r.URL
 	u.RawQuery = q.Encode()
-http.Redirect(w, r, u.String(), http.StatusFound)
+	http.Redirect(w, r, u.String(), http.StatusFound)
 }
 
 func (s *Server) gateWeb(next http.HandlerFunc) http.HandlerFunc {
@@ -432,7 +432,7 @@ func (s *Server) handleServers(w http.ResponseWriter, r *http.Request) {
 	for _, sv := range servers {
 		row := out{ID: sv.ID, Name: sv.Name}
 		if st := latest[sv.ID]; st != nil {
-			row.Online = time.Now().Unix()-st.Timestamp < 30
+			row.Online = time.Now().Unix()-st.Timestamp < onlineThresholdSec
 			row.CPUUsage = st.CPUUsage
 			row.MemUsed = st.MemoryUsed
 			row.MemTotal = st.MemoryTotal

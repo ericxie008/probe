@@ -42,20 +42,16 @@ function connect() {
   ws.onopen = () => { document.querySelector("header .dot").style.background = "var(--green)"; };
   ws.onclose = () => {
     document.querySelector("header .dot").style.background = "var(--red)";
-    // 如果页面已无有效 session(比如 cookie 过期),反复重连会收到 401。
-    // 检测到未授权后跳转登录页,而不是无限重连。
-    if (ws && ws.readyState === WebSocket.CLOSED && location.pathname !== "/login") {
-      // 用一次 fetch 探测 session 是否还有效;401 则跳登录。
-      fetch("/api/servers", { redirect: "manual" }).then(r => {
-        if (r.status === 401 || r.status === 0 || r.type === "opaqueredirect") location.href = "/login";
-      }).catch(() => {});
-    }
+    // 重新拉取一次列表:既刷新服务器端的在线标志(不受设备时钟影响),
+    // 又顺便探测 session 是否有效;401 时 refreshServers 会跳登录页。
+    refreshServers();
     setTimeout(connect, 2000);
   };
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
     if (msg.type === "state") {
       if (overrideNames[msg.data.agent_id]) msg.data.name = overrideNames[msg.data.agent_id];
+      msg.data.online = !!msg.online; // 服务器权威在线标志,避免设备时钟 skew
       states[msg.data.agent_id] = msg.data;
       if (!manualOrder.includes(msg.data.agent_id)) manualOrder.push(msg.data.agent_id);
       if (selected === msg.data.agent_id) updateDetail();
@@ -270,7 +266,10 @@ function card(s) {
 }
 
 function isOnline(s) {
-  if (!s || !s.timestamp) return false;
+  if (!s) return false;
+  // 优先使用服务器权威判断(同一台机器的时钟,无 skew);仅当标志缺失时回退到本地时间戳。
+  if (typeof s.online === "boolean") return s.online;
+  if (!s.timestamp) return false;
   return Date.now() / 1000 - s.timestamp < 30;
 }
 
@@ -656,36 +655,62 @@ document.getElementById("deployBtn").onclick = showDeploy;
 document.getElementById("logoutBtn").onclick = doLogout;
 // 先从 API 拉取完整服务器列表灌入 states(包括离线的),再连接 WebSocket 和渲染。
 // 这样刷新后离线 agent 不会从列表消失,WebSocket 推送的实时状态随后覆盖更新。
-initServers().then(() => { connect(); route(); });
+refreshServers().then(() => { connect(); route(); });
 
-// 页面加载时从 API 拉取完整服务器列表,初始化 states 和名字缓存。
-// 离线 agent(没有最新上报)也会出现,只是标记为离线。
-async function initServers() {
+// iOS 切后台/锁屏会冻结 WebSocket;回到前台时立即用 HTTP 刷新服务器端的在线标志,
+// 并在连接已断开时重连,避免显示陈旧(或因时钟差抖动)的离线状态。
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  refreshServers();
+  if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) connect();
+});
+
+// refreshServers 从 /api/servers 拉取列表,把服务器端权威计算的 online 标志合并进
+// 本地 states。启动、WS 重连、页面回到前台时都会调用,作为 WebSocket 推送的兜底:
+// 即使设备时钟和服务器不一致、或 WS 被 iOS 冻结,在线状态也不会抖动。
+// 返回的 HTTP 401 同时用于探测 session 失效并跳转登录。
+async function refreshServers() {
+  let r;
   try {
-    const r = await fetch("/api/servers");
-    const list = await r.json();
-    if (Array.isArray(list)) {
-      manualOrder = list.map(s => s.id);
-      for (const s of list) {
-        if (s.name) overrideNames[s.id] = s.name;
-        // 构造一个最小 state 放进列表;WS 推送的实时数据会随后覆盖。
-        // 这些条目 isOnline() 判定为离线(updated 为旧时间戳或缺失)。
-        states[s.id] = {
-          agent_id: s.id,
-          name: s.name,
-          cpu_usage: s.cpu_usage || 0,
-          memory_used: s.mem_used || 0,
-          memory_total: s.mem_total || 0,
-          disk_used: s.disk_used || 0,
-          disk_total: s.disk_total || 0,
-          net_speed_in: s.net_speed_in || 0,
-          net_speed_out: s.net_speed_out || 0,
-          os: s.os || "",
-          uptime: s.uptime || 0,
-          load1: s.load1 || 0,
-          timestamp: s.updated || 0,
-        };
-      }
+    r = await fetch("/api/servers", { redirect: "manual" });
+  } catch (e) { return; }
+  if (r.status === 401 || r.status === 0 || r.type === "opaqueredirect") {
+    if (location.pathname !== "/login") location.href = "/login";
+    return;
+  }
+  if (!r.ok) return;
+  let list;
+  try { list = await r.json(); } catch (e) { return; }
+  if (!Array.isArray(list)) return;
+  manualOrder = list.map(s => s.id);
+  for (const s of list) {
+    if (s.name) overrideNames[s.id] = s.name;
+    const cur = states[s.id];
+    if (cur) {
+      // 已有实时数据:只更新权威 online / 时间戳,保留 WS 推送的最新指标。
+      cur.online = !!s.online;
+      cur.timestamp = s.updated || cur.timestamp || 0;
+      if (!cur.name) cur.name = s.name;
+      if (!cur.os) cur.os = s.os || "";
+    } else {
+      // 未见过的 agent(如离线的):放入最小 state,online 由服务器判定。
+      states[s.id] = {
+        agent_id: s.id,
+        name: s.name,
+        os: s.os || "",
+        online: !!s.online,
+        cpu_usage: s.cpu_usage || 0,
+        memory_used: s.mem_used || 0,
+        memory_total: s.mem_total || 0,
+        disk_used: s.disk_used || 0,
+        disk_total: s.disk_total || 0,
+        net_speed_in: s.net_speed_in || 0,
+        net_speed_out: s.net_speed_out || 0,
+        uptime: s.uptime || 0,
+        load1: s.load1 || 0,
+        timestamp: s.updated || 0,
+      };
     }
-  } catch (e) {}
+  }
+  if (!selected) renderList();
 }
