@@ -138,6 +138,11 @@ func setSecurityHeaders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Referrer-Policy", "no-referrer")
+	// 静态资源(html/css/js)用 no-cache:浏览器可以缓存,但每次使用前必须回源校验。
+	// FileServer 会自动带 Last-Modified/ETag,未改动时回 304 几乎零开销;改动后返回新内容。
+	// 这解决了 iOS Safari 对无显式缓存头资源做激进启发式缓存、导致前端更新后普通刷新
+	// 仍读旧文件的问题(此前 app.js 的在线状态修复在普通窗口里不生效)。
+	w.Header().Set("Cache-Control", "no-cache")
 	if r.TLS != nil {
 		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 	}
