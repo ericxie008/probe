@@ -60,7 +60,12 @@ type agentConn struct {
 }
 
 type viewerConn struct {
-	ws   *websocket.Conn
+	ws *websocket.Conn
+	// mu 串行化对 ws 的所有写。gorilla/websocket 要求同一连接同时只能有一个
+	// writer,TextMessage 写与 PingMessage(WriteControl)走不同内部路径,
+	// 二者并发会触发 "concurrent write to websocket connection" panic,
+	// 进程崩溃、全队掉线。所有 WriteMessage 必须持本锁。
+	mu   sync.Mutex
 	send chan []byte // outbound to browser
 }
 
@@ -195,8 +200,11 @@ func (h *Hub) HandleViewer(ws *websocket.Conn) {
 			// disconnect, NAT timeout) can't block this goroutine
 			// forever. A failed write unblocks range and lets the
 			// deferred cleanup close the connection.
+			vc.mu.Lock()
 			_ = ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if err := ws.WriteMessage(websocket.TextMessage, b); err != nil {
+			err := ws.WriteMessage(websocket.TextMessage, b)
+			vc.mu.Unlock()
+			if err != nil {
 				return
 			}
 		}
@@ -208,8 +216,11 @@ func (h *Hub) HandleViewer(ws *websocket.Conn) {
 		ping := time.NewTicker(30 * time.Second)
 		defer ping.Stop()
 		for range ping.C {
+			vc.mu.Lock()
 			_ = ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if err := ws.WriteMessage(websocket.PingMessage, nil); err != nil {
+			err := ws.WriteMessage(websocket.PingMessage, nil)
+			vc.mu.Unlock()
+			if err != nil {
 				return
 			}
 		}
