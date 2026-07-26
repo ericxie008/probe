@@ -499,6 +499,12 @@ async function showDeploy() {
     `sudo SERVER=${shq(host)} TOKEN=${shq(deploySecret || "<填入密钥: " + maskedSecret + ">")} TLS=1${isTLS ? " INSECURE=1" : ""} ./scripts/install-agent.sh\n` +
     `# NAME 不传默认用系统主机名,自动唯一`;
 
+  const openwrtInstallCmd = `# 一键安装 Agent(OpenWrt / 嵌入式设备)\n` +
+    `# 无需 git / Go / sudo,直接下载预编译二进制\n` +
+    `curl -fsSL https://raw.githubusercontent.com/ericxie008/probe/main/scripts/install-agent-openwrt.sh \\\n` +
+    `  | SERVER=${shq(host)} TOKEN=${shq(deploySecret || "<填入密钥: " + maskedSecret + ">")} TLS=1${isTLS ? " INSECURE=1" : ""} sh\n` +
+    `# NAME 不传默认用系统主机名`;
+
   const upgradeCmd = `# 升级 Agent\n` +
     `cd ~/probe && git pull\n` +
     `export PATH="/usr/local/go/bin:$PATH"\n` +
@@ -549,7 +555,7 @@ async function showDeploy() {
     `rm -rf /opt/probe-agent\n` +
     `echo "Agent 已卸载"`;
 
-  deployCmds = { dashInstall: dashInstallCmd, dashUpgrade: dashUpgradeCmd, dashUninstall: dashUninstallCmd, install: installCmd, upgrade: upgradeCmd, uninstall: uninstallCmd, manual: manualCmd };
+  deployCmds = { dashInstall: dashInstallCmd, dashUpgrade: dashUpgradeCmd, dashUninstall: dashUninstallCmd, install: installCmd, openwrtInstall: openwrtInstallCmd, upgrade: upgradeCmd, uninstall: uninstallCmd, manual: manualCmd };
 
   // 构建模态框
   const modal = document.createElement("div");
@@ -587,6 +593,10 @@ async function showDeploy() {
           <pre class="cmd-block" id="cmdInstall"></pre>
         </div>
         <div class="cmd-section">
+          <div class="cmd-title"><span>安装新 Agent (OpenWrt)</span><button class="copy-btn" data-copy="openwrtInstall">复制</button></div>
+          <pre class="cmd-block" id="cmdOpenwrtInstall"></pre>
+        </div>
+        <div class="cmd-section">
           <div class="cmd-title"><span>升级已有 Agent</span><button class="copy-btn" data-copy="upgrade">复制</button></div>
           <pre class="cmd-block" id="cmdUpgrade"></pre>
         </div>
@@ -612,6 +622,7 @@ async function showDeploy() {
   document.getElementById("cmdDashUpgrade").textContent = dashUpgradeCmd;
   document.getElementById("cmdDashUninstall").textContent = dashUninstallCmd;
   document.getElementById("cmdInstall").textContent = installCmd;
+  document.getElementById("cmdOpenwrtInstall").textContent = openwrtInstallCmd;
   document.getElementById("cmdUpgrade").textContent = upgradeCmd;
   document.getElementById("cmdUninstall").textContent = uninstallCmd;
   document.getElementById("cmdManual").textContent = manualCmd;
