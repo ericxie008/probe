@@ -83,13 +83,53 @@ func NewStore(path string) (*Store, error) {
 		}
 	}
 	orows.Close()
-	return &Store{
+	s := &Store{
 		latest:    make(map[string]*proto.State),
 		known:     make(map[string]string),
 		deleted:   deleted,
 		overrides: make(map[string]string),
 		db:        db,
-	}, nil
+	}
+	// Backfill the in-memory latest cache from the metrics table so each
+	// known server shows its last-known metrics immediately after a restart
+	// (offline badge), not a blank row. This realises the contract in the
+	// ReapStale comment ("keep offline agents' last-known state visible")
+	// across restarts; without it the cache is empty until agents reconnect.
+	s.loadLatestFromDB()
+	return s, nil
+}
+
+// loadLatestFromDB backfills the latest cache with each agent's newest row.
+// Reads at most one row per agent in a single grouped query (no N+1).
+func (s *Store) loadLatestFromDB() {
+	rows, err := s.db.Query(`
+		SELECT m.agent_id, m.ts, m.cpu, m.mem_used, m.mem_total,
+		       m.swap_used, m.disk_used, m.net_in, m.net_out, m.load1,
+		       COALESCE(srv.override_name, srv.name)
+		FROM metrics m
+		JOIN (
+			SELECT agent_id, MAX(id) AS max_id FROM metrics GROUP BY agent_id
+		) latest ON m.id = latest.max_id
+		LEFT JOIN servers srv ON srv.id = m.agent_id`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var st proto.State
+		var swapUsed uint64
+		var name sql.NullString
+		if err := rows.Scan(&st.AgentID, &st.Timestamp, &st.CPUUsage,
+			&st.MemoryUsed, &st.MemoryTotal, &swapUsed,
+			&st.DiskUsed, &st.NetIn, &st.NetOut, &st.Load1, &name); err != nil {
+			continue
+		}
+		st.SwapUsed = swapUsed
+		if name.Valid {
+			st.Name = name.String
+		}
+		s.latest[st.AgentID] = &st
+	}
 }
 
 // Close releases the database handle.
@@ -308,16 +348,6 @@ func (s *Store) overrideName(id string) string {
 	n := s.overrides[id]
 	s.mu.RUnlock()
 	return n
-}
-
-// SetLatestName overrides the name field of the cached latest state for an
-// agent, so renders reflect a rename immediately. No-op if unknown.
-func (s *Store) SetLatestName(id, name string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if st := s.latest[id]; st != nil {
-		st.Name = name
-	}
 }
 
 // SetLatestNameCopy sets the name atomically and returns a shallow copy

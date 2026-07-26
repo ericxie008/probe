@@ -183,9 +183,9 @@ func (c *Collector) Collect(agentID, name string) *proto.State {
 		s.NetOut = counters[0].BytesSent
 	}
 	// Use the real wall-clock gap between consecutive network samples.
-	// Collect() includes a ~1s cpu.Percent() blocking call plus other
-	// I/O, so now-to-now spans ~4s not the 3s ticker interval. Using
-	// the ticker interval here systematically understated speeds.
+	// Collect() does disk/process I/O that adds jitter, so now-to-now
+	// doesn't line up with the 3s ticker interval. Measuring the real
+	// gap avoids systematic speed bias versus assuming the interval.
 	netDt := netNow.Sub(c.prevNetSample).Seconds()
 	if !c.prevNetSample.IsZero() && netDt > 0 {
 		if s.NetIn >= c.prevNetIn {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -83,7 +84,13 @@ func main() {
 	if *cert != "" {
 		scheme = "https"
 	}
-	log.Printf("dashboard listening on %s (web ui at %s://%s/)", *addr, scheme, displayHost(*addr))
+	// 优先显示非环回 IP,部署在远程服务器时日志里的地址直接可用。
+	// 找不到非环回地址时回退到 host:port 原样显示。
+	host := displayHost(*addr)
+	if pub := primaryIP(); pub != "" {
+		host = pub + portSuffix(*addr)
+	}
+	log.Printf("dashboard listening on %s (web ui at %s://%s/)", *addr, scheme, host)
 
 	var serveErr error
 	if *cert != "" {
@@ -104,6 +111,34 @@ func displayHost(addr string) string {
 		}
 	}
 	return addr
+}
+
+// portSuffix extracts the ":port" portion of a "host:port" listen address.
+func portSuffix(addr string) string {
+	if i := strings.LastIndex(addr, ":"); i >= 0 {
+		return addr[i:]
+	}
+	return ""
+}
+
+// primaryIP returns the first non-loopback IPv4 of this machine, or "".
+// Used only for the startup log so the operator sees a usable URL when
+// deploying on a remote box where "localhost" in the log is useless.
+func primaryIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, a := range addrs {
+		ipNet, ok := a.(*net.IPNet)
+		if !ok || ipNet.IP.IsLoopback() {
+			continue
+		}
+		if v4 := ipNet.IP.To4(); v4 != nil {
+			return v4.String()
+		}
+	}
+	return ""
 }
 
 func safeStatic(h http.Handler) http.Handler {

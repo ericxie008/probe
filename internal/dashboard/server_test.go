@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -9,6 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+
+	"probe/internal/proto"
 )
 
 // ---- Store.Reorder / sort_order ----
@@ -346,8 +349,102 @@ func TestHandleServerDetailRejectsTraversal(t *testing.T) {
 			rec := httptest.NewRecorder()
 			s.handleServerDetail(rec, req)
 			if rec.Code != http.StatusBadRequest && rec.Code != http.StatusNotFound {
-				t.Errorf("for path %q got status %d, want 400 or 404", p, rec.Code)
+			t.Errorf("for path %q got status %d, want 400 or 404", p, rec.Code)
 			}
 		})
+	}
+}
+
+// ---- marshalState: server-authoritative online flag ----
+
+func TestMarshalStateOnlineFlag(t *testing.T) {
+	// Fresh timestamp -> online=true in the broadcast payload.
+	fresh := &proto.State{AgentID: "a", Timestamp: time.Now().Unix()}
+	var msg stateMsg
+	if err := json.Unmarshal(marshalState(fresh), &msg); err != nil {
+		t.Fatalf("unmarshal fresh: %v", err)
+	}
+	if !msg.Online {
+		t.Error("fresh state should be online")
+	}
+
+	// Stale timestamp (beyond onlineThresholdSec) -> online=false.
+	stale := &proto.State{AgentID: "a", Timestamp: time.Now().Unix() - onlineThresholdSec - 1}
+	if err := json.Unmarshal(marshalState(stale), &msg); err != nil {
+		t.Fatalf("unmarshal stale: %v", err)
+	}
+	if msg.Online {
+		t.Error("stale state should be offline")
+	}
+
+	// nil state must not panic and reports offline.
+	if err := json.Unmarshal(marshalState(nil), &msg); err != nil {
+		t.Fatalf("unmarshal nil: %v", err)
+	}
+	if msg.Online {
+		t.Error("nil state should be offline")
+	}
+}
+
+// ---- Store: latest cache is backfilled from metrics on startup ----
+
+func TestStoreBackfillsLatestOnReopen(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+
+	// First open: insert a server + one metric row, then close.
+	s1, err := NewStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s1.RememberAgent("agent-1", "Box One")
+	s1.UpdateState(&proto.State{
+		AgentID: "agent-1", Name: "Box One",
+		Timestamp:   time.Now().Unix(),
+		CPUUsage:    42.5,
+		MemoryUsed:  100, MemoryTotal: 200,
+	})
+	// Override name should also be reflected in the backfilled state.
+	if err := s1.Rename("agent-1", "Renamed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s1.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reopen: latest cache must be repopulated from metrics without any
+	// agent reconnecting, so the dashboard list isn't blank after restart.
+	s2, err := NewStore(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	st := s2.One("agent-1")
+	if st == nil {
+		t.Fatal("latest cache should be backfilled after reopen, got nil")
+	}
+	if st.CPUUsage != 42.5 {
+		t.Errorf("backfilled CPUUsage = %v, want 42.5", st.CPUUsage)
+	}
+	// Override name takes precedence over the agents-reported name.
+	if st.Name != "Renamed" {
+		t.Errorf("backfilled Name = %q, want %q (override)", st.Name, "Renamed")
+	}
+}
+
+// ---- recordLoginFail: counter is capped ----
+
+func TestRecordLoginFailCapsCounter(t *testing.T) {
+	s := &Server{loginFails: make(map[string]*loginBucket)}
+	ip := "203.0.113.9"
+	// Hammer well past the cap; fails must saturate, not grow unbounded.
+	for i := 0; i < 1000; i++ {
+		s.recordLoginFail(ip)
+	}
+	b := s.loginFails[ip]
+	if b.fails > 255 {
+		t.Errorf("fails counter = %d, want <= 255 (should saturate)", b.fails)
+	}
+	if b.fails < maxLoginFails {
+		t.Errorf("fails counter = %d, want >= %d (should have accumulated)", b.fails, maxLoginFails)
 	}
 }

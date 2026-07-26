@@ -265,7 +265,14 @@ func (s *Server) recordLoginFail(ip string) {
 		b = &loginBucket{}
 		s.loginFails[ip] = b
 	}
-	b.fails++
+	// Cap the counter at a sane ceiling. Once an IP is already banned the
+	// handler returns 429 without reaching here, but a defender that never
+	// trusts that (or a future caller) shouldn't be able to grow fails
+	// without bound. 255 is far above maxLoginFails yet small enough that
+	// the uint8-style ceiling keeps the field cheap to reason about.
+	if b.fails < 255 {
+		b.fails++
+	}
 	b.lastFail = time.Now()
 }
 
