@@ -163,6 +163,13 @@ func (h *Hub) HandleAgent(ws *websocket.Conn) {
 			return
 		}
 		if msg.Type == proto.MsgState && msg.State != nil {
+			// 用 server 接收时刻覆盖 agent 上报的 Timestamp,消除 agent 时钟
+			// 偏移对在线判定/入库时间的影响。agent 漏装 NTP 时钟漂移 >30s 时,
+			// 即使持续上报也会被 time.Now()-st.Timestamp 卡在 30s 阈值边界
+			// 抖动误判离线(KR2 慢 29s、巴西快若干秒均踩过此坑)。Timestamp 在
+			// server 侧的唯一用途就是判时间,覆盖后语义更准(server 视角的"最后
+			// 收到")。fa787a5 只去除了 viewer 端时钟依赖,agent 端在此补齐。
+			msg.State.Timestamp = time.Now().Unix()
 			h.store.UpdateState(msg.State)
 			h.broadcast(msg.State)
 		}
