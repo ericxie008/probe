@@ -27,6 +27,15 @@ err()  { printf '\033[31m%s\033[0m\n' "$1"; }
 NAME="${NAME:-$(cat /proc/sys/kernel/hostname 2>/dev/null || echo openwrt)}"
 INTERVAL="${INTERVAL:-3s}"
 
+# NAME 会被原样嵌入 init 脚本的命令行,必须限制字符集以防 shell 注入。
+# 用黑名单:只要不含危险 shell 元字符即放行(中文/Unicode 安全)。
+validate_name() {
+  printf '%s' "$1" | grep -Eq '["'"'"'`$;|&<>\]'
+}
+if validate_name "$NAME"; then
+  err "NAME 含非法字符(禁止 \" ' \` \$ ; | & < > \\\\)"; exit 1
+fi
+
 # 架构映射到预编译产物名
 case "$(uname -m)" in
   x86_64|amd64)    ARCH="amd64" ;;

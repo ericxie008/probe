@@ -31,6 +31,12 @@ INTERVAL="${INTERVAL:-3s}"
 USE_TLS="${TLS:-0}"
 INSECURE_FLAG="${INSECURE:-0}"
 
+# NAME 会被原样嵌入 init/systemd 配置的命令行,必须限制字符集以防注入。
+# 黑名单:禁止危险 shell 元字符,允许中文/Unicode。
+if printf '%s' "$NAME" | grep -Eq '["'"'"'`$;|&<>\]'; then
+  R "NAME 含非法字符(禁止 \" ' \` \$ ; | & < > \\)"; exit 1
+fi
+
 # 检测是否为 OpenWrt(用 procd 而非 systemd)
 IS_OPENWRT=0
 if [[ -f /etc/openwrt_release ]] || ! command -v systemctl >/dev/null 2>&1; then
@@ -106,19 +112,57 @@ ensure_go() {
   G "Go 安装完成"
 }
 
-ensure_go
+
+# download_binary 按 CPU 架构从 GitHub Release 下载预编译 agent 到 $INSTALL_DIR。
+# 版本与 scripts/install-agent-openwrt.sh 保持一致,Release 里需有对应产物。
+PROBE_VERSION="v0.1.0"
+PROBE_REPO="ericxie008/probe"
+download_binary() {
+  local arch
+  case "$(uname -m)" in
+    x86_64|amd64)    arch="amd64" ;;
+    aarch64|arm64)   arch="arm64" ;;
+    armv7l|armv6l|armv7) arch="arm-7" ;;
+    mips|mipsle|mipsel)  arch="mipsle" ;;
+    *) R "不支持的 CPU 架构: $(uname -m)"; exit 1 ;;
+  esac
+  local url="https://github.com/${PROBE_REPO}/releases/download/${PROBE_VERSION}/agent-linux-${arch}"
+  G "==> 下载预编译 agent (linux/$arch $PROBE_VERSION)"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$url" -o "$INSTALL_DIR/agent.new" \
+      || { R "下载失败: $url"; exit 1; }
+  else
+    wget -qO "$INSTALL_DIR/agent.new" "$url" \
+      || { R "下载失败: $url"; exit 1; }
+  fi
+  # 兜底:GitHub 404 时 curl -f 已报错;这里防异常 HTML 被当二进制
+  if [[ $(wc -c < "$INSTALL_DIR/agent.new") -lt 100000 ]]; then
+    R "下载的文件过小,可能该架构未发布或版本号不对: $url"
+    cat "$INSTALL_DIR/agent.new" 1>&2 || true
+    rm -f "$INSTALL_DIR/agent.new"
+    exit 1
+  fi
+  mv "$INSTALL_DIR/agent.new" "$INSTALL_DIR/agent"
+  chmod +x "$INSTALL_DIR/agent"
+}
 
 # --------------------------------------------------------------------
-# 编译
+# 获取 agent 二进制:OpenWrt 下载预编译版,其他平台源码编译
 # --------------------------------------------------------------------
-G "==> 编译 Agent"
 mkdir -p "$INSTALL_DIR"
-export PATH="/usr/local/go/bin:$PATH"
-if [[ -f "cmd/agent/main.go" ]]; then
-  GOOS=linux go build -trimpath -ldflags "-s -w" -o "$INSTALL_DIR/agent" ./cmd/agent \
-    || { R "编译失败"; exit 1; }
+if [[ "$IS_OPENWRT" == "1" ]]; then
+  # OpenWrt/嵌入式设备跳过几十 MB 的 Go 工具链下载与编译,直接拿预编译二进制。
+  download_binary
 else
-  R "找不到源码 cmd/agent/main.go,请在项目目录下运行。"; exit 1
+  ensure_go
+  G "==> 编译 Agent"
+  export PATH="/usr/local/go/bin:$PATH"
+  if [[ -f "cmd/agent/main.go" ]]; then
+    GOOS=linux go build -trimpath -ldflags "-s -w" -o "$INSTALL_DIR/agent" ./cmd/agent \
+      || { R "编译失败"; exit 1; }
+  else
+    R "找不到源码 cmd/agent/main.go,请在项目目录下运行。"; exit 1
+  fi
 fi
 
 EXTRA_ARGS=""
