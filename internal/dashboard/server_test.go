@@ -402,6 +402,8 @@ func TestStoreBackfillsLatestOnReopen(t *testing.T) {
 		Timestamp:   time.Now().Unix(),
 		CPUUsage:    42.5,
 		MemoryUsed:  100, MemoryTotal: 200,
+		SwapUsed:    30, SwapTotal: 60,
+		DiskUsed:    70, DiskTotal: 140,
 	})
 	// Override name should also be reflected in the backfilled state.
 	if err := s1.Rename("agent-1", "Renamed"); err != nil {
@@ -424,6 +426,17 @@ func TestStoreBackfillsLatestOnReopen(t *testing.T) {
 	}
 	if st.CPUUsage != 42.5 {
 		t.Errorf("backfilled CPUUsage = %v, want 42.5", st.CPUUsage)
+	}
+	// Totals must be restored too — an earlier version of loadLatestFromDB
+	// forgot swap_total/disk_total, leaving offline boxes showing 0% disk.
+	if st.SwapTotal != 60 {
+		t.Errorf("backfilled SwapTotal = %d, want 60", st.SwapTotal)
+	}
+	if st.DiskTotal != 140 {
+		t.Errorf("backfilled DiskTotal = %d, want 140", st.DiskTotal)
+	}
+	if st.DiskUsed != 70 {
+		t.Errorf("backfilled DiskUsed = %d, want 70", st.DiskUsed)
 	}
 	// Override name takes precedence over the agents-reported name.
 	if st.Name != "Renamed" {

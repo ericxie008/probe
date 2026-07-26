@@ -104,7 +104,8 @@ func NewStore(path string) (*Store, error) {
 func (s *Store) loadLatestFromDB() {
 	rows, err := s.db.Query(`
 		SELECT m.agent_id, m.ts, m.cpu, m.mem_used, m.mem_total,
-		       m.swap_used, m.disk_used, m.net_in, m.net_out, m.load1,
+		       m.swap_used, m.swap_total, m.disk_used, m.disk_total,
+		       m.net_in, m.net_out, m.load1,
 		       COALESCE(srv.override_name, srv.name)
 		FROM metrics m
 		JOIN (
@@ -117,14 +118,15 @@ func (s *Store) loadLatestFromDB() {
 	defer rows.Close()
 	for rows.Next() {
 		var st proto.State
-		var swapUsed uint64
+		// swap/disk totals are read straight into the state struct; the
+		// scanner writes the INTEGER column into the uint64 field.
 		var name sql.NullString
 		if err := rows.Scan(&st.AgentID, &st.Timestamp, &st.CPUUsage,
-			&st.MemoryUsed, &st.MemoryTotal, &swapUsed,
-			&st.DiskUsed, &st.NetIn, &st.NetOut, &st.Load1, &name); err != nil {
+			&st.MemoryUsed, &st.MemoryTotal,
+			&st.SwapUsed, &st.SwapTotal, &st.DiskUsed, &st.DiskTotal,
+			&st.NetIn, &st.NetOut, &st.Load1, &name); err != nil {
 			continue
 		}
-		st.SwapUsed = swapUsed
 		if name.Valid {
 			st.Name = name.String
 		}
