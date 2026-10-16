@@ -29,6 +29,7 @@ type Config struct {
 	Interval time.Duration
 	TLS      bool // connect with wss:// (TLS) instead of ws://
 	Insecure bool // skip TLS cert verification (self-signed / private net)
+	NoProcs  bool // disable top process collection to save CPU on weak ARM/embedded
 }
 
 // errAuthFailed signals that the server rejected the token.
@@ -51,9 +52,11 @@ func NewClient(cfg Config) *Client {
 	if cfg.Interval <= 0 {
 		cfg.Interval = 3 * time.Second
 	}
+	collector := NewCollector()
+	collector.DisableProcs = cfg.NoProcs
 	return &Client{
 		cfg:       cfg,
-		collector: NewCollector(),
+		collector: collector,
 	}
 }
 

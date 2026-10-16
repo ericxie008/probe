@@ -30,6 +30,7 @@ NAME="${NAME:-$(get_hostname)}"
 INTERVAL="${INTERVAL:-3s}"
 USE_TLS="${TLS:-0}"
 INSECURE_FLAG="${INSECURE:-0}"
+NO_PROCS_FLAG="${NO_PROCS:-0}"
 
 # NAME 会被原样嵌入 init/systemd 配置的命令行,必须限制字符集以防注入。
 # 黑名单:禁止危险 shell 元字符,允许中文/Unicode。
@@ -168,6 +169,7 @@ fi
 EXTRA_ARGS=""
 [[ "$USE_TLS" == "1" ]] && EXTRA_ARGS="$EXTRA_ARGS -tls"
 [[ "$INSECURE_FLAG" == "1" ]] && EXTRA_ARGS="$EXTRA_ARGS -insecure"
+[[ "$NO_PROCS_FLAG" == "1" ]] && EXTRA_ARGS="$EXTRA_ARGS -no-procs"
 
 # --------------------------------------------------------------------
 # 服务配置

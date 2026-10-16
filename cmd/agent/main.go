@@ -30,6 +30,7 @@ func main() {
 	interval := flag.Duration("interval", 3*time.Second, "collection interval")
 	tls := flag.Bool("tls", os.Getenv("PROBE_TLS") != "", "connect with TLS (wss://)")
 	insecure := flag.Bool("insecure", os.Getenv("PROBE_INSECURE") != "", "skip TLS certificate verification (self-signed)")
+	noProcs := flag.Bool("no-procs", os.Getenv("PROBE_NO_PROCS") != "", "disable process table collection to save CPU on weak devices")
 	flag.Parse()
 
 	if *token == "" {
@@ -44,6 +45,7 @@ func main() {
 		Interval: *interval,
 		TLS:      *tls,
 		Insecure: *insecure,
+		NoProcs:  *noProcs,
 	}
 	// Cap to 2 goroutine threads max — the agent is mostly I/O bound
 	// and doesn't benefit from many parallel threads on weak CPUs.
@@ -54,7 +56,7 @@ func main() {
 	if *tls {
 		scheme = "wss"
 	}
-	log.Printf("starting agent name=%s server=%s scheme=%s", cfg.Name, cfg.Server, scheme)
+	log.Printf("starting agent name=%s server=%s scheme=%s no-procs=%v", cfg.Name, cfg.Server, scheme, cfg.NoProcs)
 	agent.NewClient(cfg).Run()
 }
 

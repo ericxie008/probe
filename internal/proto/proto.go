@@ -65,10 +65,11 @@ type State struct {
 	NetSpeedOut uint64        `json:"net_speed_out"` // bytes/s since last state
 	Interfaces []NetInterface `json:"interfaces,omitempty"`
 
-	Processes  []ProcessInfo  `json:"processes,omitempty"`
-	ConnCount  uint32         `json:"conn_count"` // established TCP connections
-	BootTime   uint64         `json:"boot_time"`
-	Timestamp  int64          `json:"timestamp"` // unix seconds
+	Processes    []ProcessInfo  `json:"processes,omitempty"`
+	ConnCount    uint32         `json:"conn_count"` // active TCP connections
+	UDPConnCount uint32         `json:"udp_conn_count,omitempty"` // active UDP sockets
+	BootTime     uint64         `json:"boot_time"`
+	Timestamp    int64          `json:"timestamp"` // unix seconds
 }
 
 // DiskInfo describes a mounted filesystem.

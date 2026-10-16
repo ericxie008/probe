@@ -45,10 +45,11 @@ case "$(uname -m)" in
   *) err "不支持的 CPU 架构: $(uname -m)"; exit 1 ;;
 esac
 
-# TLS / 跳过校验
+# TLS / 跳过校验 / 关闭进程采集
 EXTRA="-server \"$SERVER\" -name \"$NAME\" -interval \"$INTERVAL\""
 [ "${TLS:-0}" = "1" ]      && EXTRA="$EXTRA -tls"
 [ "${INSECURE:-0}" = "1" ] && EXTRA="$EXTRA -insecure"
+[ "${NO_PROCS:-0}" = "1" ] && EXTRA="$EXTRA -no-procs"
 
 mkdir -p "$INSTALL_DIR"
 
