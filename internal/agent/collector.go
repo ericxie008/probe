@@ -34,6 +34,7 @@ type Collector struct {
 	prevNetSample         time.Time
 	prevCPUTimes          []cpu.TimesStat
 	tick                  int    // increments each Collect() call
+	bootTime              uint64
 	cachedOS              string // semi-static host info
 	cachedInterfaces      []proto.NetInterface
 	cachedDisks           []proto.DiskInfo
@@ -78,6 +79,12 @@ func NewCollector() *Collector {
 	if t, err := cpu.Times(true); err == nil {
 		c.prevCPUTimes = t
 	}
+	// Cache static host information once at startup so Collect() never calls host.Info()
+	// (which invokes heavy external commands like lsb_release on Linux).
+	if hi, err := host.Info(); err == nil {
+		c.bootTime = hi.BootTime
+		c.cachedOS = hi.OS + " " + hi.Platform + " " + hi.PlatformVersion
+	}
 	return c
 }
 
@@ -91,19 +98,20 @@ func (c *Collector) CPUCount() int { return c.cpuCount }
 func (c *Collector) Collect(agentID, name string) *proto.State {
 	now := time.Now()
 	s := &proto.State{
-		AgentID: agentID,
-		Name:    name,
-		OS:      runtime.GOOS,
-		Arch:    runtime.GOARCH,
+		AgentID:  agentID,
+		Name:     name,
+		OS:       c.cachedOS,
+		Arch:     runtime.GOARCH,
+		BootTime: c.bootTime,
 	}
 
-	if hi, err := host.Info(); err == nil {
-		s.Uptime = hi.Uptime
-		s.BootTime = hi.BootTime
-		if c.cachedOS == "" {
-			c.cachedOS = hi.OS + " " + hi.Platform + " " + hi.PlatformVersion
+	if c.bootTime > 0 {
+		nowUnix := now.Unix()
+		if nowUnix >= int64(c.bootTime) {
+			s.Uptime = uint64(nowUnix - int64(c.bootTime))
 		}
-		s.OS = c.cachedOS
+	} else if u, err := host.Uptime(); err == nil {
+		s.Uptime = u
 	}
 
 	if lv, err := load.Avg(); err == nil {
